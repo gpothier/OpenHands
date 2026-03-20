@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -58,6 +59,26 @@ def _get_kvm_enabled_default() -> bool:
     return value.lower() in ('true', '1', 'yes')
 
 
+def _get_auto_workspace_dir_default() -> bool:
+    value = os.getenv('SANDBOX_AUTO_WORKSPACE_DIR', '')
+    return value.lower() in ('true', '1', 'yes')
+
+
+def _get_workspace_dir_base_default() -> str:
+    return os.getenv('SANDBOX_WORKSPACE_DIR_BASE') or os.path.expanduser(
+        '~/.openhands/workspaces'
+    )
+
+
+def _get_cleanup_workspace_dir_default() -> bool:
+    value = os.getenv('SANDBOX_CLEANUP_WORKSPACE_DIR', 'true')
+    return value.lower() not in ('false', '0', 'no')
+
+
+_OH_WORKSPACE_DIR_LABEL = 'oh_workspace_dir'
+
+
+
 class VolumeMount(BaseModel):
     """Mounted volume within the container."""
 
@@ -102,6 +123,9 @@ class DockerSandboxService(SandboxService):
     startup_grace_seconds: int = STARTUP_GRACE_SECONDS
     use_host_network: bool = False
     kvm_enabled: bool = False
+    auto_workspace_dir: bool = False
+    workspace_dir_base: str | None = None
+    cleanup_workspace_dir: bool = True
 
     def _find_unused_port(self) -> int:
         """Find an unused port on the host machine."""
@@ -436,6 +460,40 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
+        # Optionally create a unique workspace directory on the host per sandbox.
+        # We mount at the parent of working_dir (e.g. /workspace) rather than
+        # working_dir itself (e.g. /workspace/project) so that sibling directories
+        # such as /workspace/conversations and /workspace/bash_events are also
+        # persisted on the host.
+        if self.auto_workspace_dir:
+            base = self.workspace_dir_base or os.path.expanduser('~/.openhands/workspaces')
+            workspace_dir = os.path.join(base, container_name)
+            os.makedirs(workspace_dir, exist_ok=True)
+            os.chmod(workspace_dir, 0o777)
+            # Pre-create the working_dir subdirectory (e.g. /workspace/project).
+            # When working_dir is a path that doesn't yet exist inside the container,
+            # Docker creates it as root before starting any process. The sibling
+            # directories (bash_events, conversations) don't have this problem because
+            # they are created lazily by the application, which runs as uid 10001.
+            # Pre-creating the directory from the host prevents Docker from creating
+            # it as root and making it unwritable by the container user.
+            # The deeper fix would be to set working_dir to /workspace in the sandbox
+            # spec so Docker doesn't need to create a subdirectory, but that would
+            # change the agent's default working directory.
+            project_dir = os.path.join(
+                workspace_dir, os.path.basename(sandbox_spec.working_dir)
+            )
+            os.makedirs(project_dir, exist_ok=True)
+            os.chmod(project_dir, 0o777)
+            volumes[workspace_dir] = {
+                'bind': os.path.dirname(sandbox_spec.working_dir),
+                'mode': 'rw',
+            }
+            labels[_OH_WORKSPACE_DIR_LABEL] = workspace_dir
+            _logger.info(
+                f'Created workspace directory for sandbox {sandbox_id}: {workspace_dir}'
+            )
+
         # Determine network mode
         network_mode = 'host' if self.use_host_network else None
 
@@ -525,6 +583,9 @@ class DockerSandboxService(SandboxService):
                 return False
             container = self.docker_client.containers.get(sandbox_id)
 
+            # Read workspace dir label before removing the container
+            workspace_dir = container.labels.get(_OH_WORKSPACE_DIR_LABEL)
+
             # Stop the container if it's running
             if container.status in ['running', 'paused']:
                 container.stop(timeout=10)
@@ -540,6 +601,13 @@ class DockerSandboxService(SandboxService):
             except (NotFound, APIError):
                 # Volume might not exist or already removed
                 pass
+
+            # Remove the auto-created workspace directory if applicable
+            if self.cleanup_workspace_dir and workspace_dir:
+                _logger.info(
+                    f'Deleting workspace directory for sandbox {sandbox_id}: {workspace_dir}'
+                )
+                shutil.rmtree(workspace_dir, ignore_errors=True)
 
             return True
         except (NotFound, APIError):
@@ -637,6 +705,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'is problematic. Configure via AGENT_SERVER_USE_HOST_NETWORK environment variable.'
         ),
     )
+<<<<<<< HEAD
     kvm_enabled: bool = Field(
         default_factory=_get_kvm_enabled_default,
         description=(
@@ -645,6 +714,31 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'virtual machines instead of using slower emulation. Requires the host '
             'to have KVM available (/dev/kvm must exist and be accessible). '
             'Configure via SANDBOX_KVM_ENABLED environment variable.'
+=======
+    auto_workspace_dir: bool = Field(
+        default_factory=_get_auto_workspace_dir_default,
+        description=(
+            'Automatically create a unique directory on the host per sandbox and '
+            'mount it at the sandbox working directory. '
+            'Configure via SANDBOX_AUTO_WORKSPACE_DIR environment variable.'
+        ),
+    )
+    workspace_dir_base: str = Field(
+        default_factory=_get_workspace_dir_base_default,
+        description=(
+            'Base directory under which per-sandbox workspace directories are created '
+            'when auto_workspace_dir=True. Each sandbox gets a subdirectory named '
+            'after its container. Defaults to ~/.openhands/workspaces. '
+            'Configure via SANDBOX_WORKSPACE_DIR_BASE environment variable.'
+        ),
+    )
+    cleanup_workspace_dir: bool = Field(
+        default_factory=_get_cleanup_workspace_dir_default,
+        description=(
+            'Whether to delete the auto-created workspace directory when a sandbox is '
+            'deleted. Defaults to True. Set to False to retain files after sandbox '
+            'deletion. Configure via SANDBOX_CLEANUP_WORKSPACE_DIR environment variable.'
+>>>>>>> 638884f59 (feat(sandbox): auto-create unique host workspace directory per sandbox)
         ),
     )
 
@@ -681,5 +775,11 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 extra_hosts=self.extra_hosts,
                 startup_grace_seconds=self.startup_grace_seconds,
                 use_host_network=self.use_host_network,
+<<<<<<< HEAD
                 kvm_enabled=self.kvm_enabled,
+=======
+                auto_workspace_dir=self.auto_workspace_dir,
+                workspace_dir_base=self.workspace_dir_base,
+                cleanup_workspace_dir=self.cleanup_workspace_dir,
+>>>>>>> 638884f59 (feat(sandbox): auto-create unique host workspace directory per sandbox)
             )

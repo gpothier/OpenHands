@@ -35,6 +35,7 @@ then re-run the command to ensure it passes. Common issues include:
 - Prefer specific `git add <filename>` instead of `git add .` to avoid accidentally staging unintended files
 - Be especially careful with `git reset --hard` after staging files, as it will remove accidentally staged files
 - When remote has new changes, use `git fetch upstream && git rebase upstream/<branch>` on the same branch
+- **Never** push to a remote branch or open a pull request unless the user has explicitly asked for it in the current message. Implementing, testing, and committing locally is fine without confirmation. Only `git push` and PR creation require an explicit instruction.
 
 ## Lockfile Regeneration (Preserve Original Tool Versions)
 
