@@ -43,6 +43,7 @@ export function ConversationName() {
     shareUrl,
     handleConfirmDelete,
     handleConfirmStop,
+    autoWorkspaceDir,
     metricsModalVisible,
     setMetricsModalVisible,
     systemModalVisible,
@@ -248,6 +249,7 @@ export function ConversationName() {
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDeleteModalVisible(false)}
           conversationTitle={conversation?.title}
+          showWorkspaceDirOption={autoWorkspaceDir}
         />
       )}
 

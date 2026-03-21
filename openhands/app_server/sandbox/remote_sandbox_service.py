@@ -552,7 +552,9 @@ class RemoteSandboxService(SandboxService):
             _logger.error(f'Error pausing sandbox {sandbox_id}: {e}')
             return False
 
-    async def delete_sandbox(self, sandbox_id: str) -> bool:
+    async def delete_sandbox(
+        self, sandbox_id: str, delete_workspace_dir: bool | None = None
+    ) -> bool:
         """Delete a sandbox by stopping its runtime."""
         try:
             stored_sandbox = await self._get_stored_sandbox(sandbox_id)

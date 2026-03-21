@@ -16,6 +16,7 @@ class WebClientFeatureFlags(BaseModel):
     hide_users_page: bool = False
     hide_billing_page: bool = False
     hide_integrations_page: bool = False
+    auto_workspace_dir: bool = False
 
 
 class WebClientConfig(DiscriminatedUnionMixin):

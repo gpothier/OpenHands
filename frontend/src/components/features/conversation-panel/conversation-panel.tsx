@@ -7,6 +7,7 @@ import { useStartTasks } from "#/hooks/query/use-start-tasks";
 import { useInfiniteScroll } from "#/hooks/use-infinite-scroll";
 import { useDeleteConversation } from "#/hooks/mutation/use-delete-conversation";
 import { useUnifiedPauseConversationSandbox } from "#/hooks/mutation/use-unified-stop-conversation";
+import { useConfig } from "#/hooks/query/use-config";
 import { ConfirmDeleteModal } from "./confirm-delete-modal";
 import { ConfirmStopModal } from "./confirm-stop-modal";
 import { LoadingSpinner } from "#/components/shared/loading-spinner";
@@ -28,6 +29,8 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
   const { conversationId: currentConversationId } = useParams();
   const ref = useClickOutsideElement<HTMLDivElement>(onClose);
   const navigate = useNavigate();
+  const { data: config } = useConfig();
+  const autoWorkspaceDir = config?.feature_flags?.auto_workspace_dir ?? false;
 
   const [confirmDeleteModalVisible, setConfirmDeleteModalVisible] =
     React.useState(false);
@@ -110,10 +113,10 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
     );
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = (deleteWorkspaceDir: boolean) => {
     if (selectedConversationId) {
       deleteConversation(
-        { conversationId: selectedConversationId },
+        { conversationId: selectedConversationId, deleteWorkspaceDir },
         {
           onSuccess: () => {
             if (selectedConversationId === currentConversationId) {
@@ -225,8 +228,8 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
 
       {confirmDeleteModalVisible && (
         <ConfirmDeleteModal
-          onConfirm={() => {
-            handleConfirmDelete();
+          onConfirm={(deleteWorkspaceDir) => {
+            handleConfirmDelete(deleteWorkspaceDir);
             setConfirmDeleteModalVisible(false);
             setSelectedConversationTitle(null);
           }}
@@ -235,6 +238,7 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
             setSelectedConversationTitle(null);
           }}
           conversationTitle={selectedConversationTitle ?? undefined}
+          showWorkspaceDirOption={autoWorkspaceDir}
         />
       )}
 

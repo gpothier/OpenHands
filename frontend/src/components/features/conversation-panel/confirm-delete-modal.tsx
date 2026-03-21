@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
   BaseModalDescription,
@@ -9,17 +10,20 @@ import { BrandButton } from "../settings/brand-button";
 import { I18nKey } from "#/i18n/declaration";
 
 interface ConfirmDeleteModalProps {
-  onConfirm: () => void;
+  onConfirm: (deleteWorkspaceDir: boolean) => void;
   onCancel: () => void;
   conversationTitle?: string;
+  showWorkspaceDirOption?: boolean;
 }
 
 export function ConfirmDeleteModal({
   onConfirm,
   onCancel,
   conversationTitle,
+  showWorkspaceDirOption = false,
 }: ConfirmDeleteModalProps) {
   const { t } = useTranslation();
+  const [deleteWorkspaceDir, setDeleteWorkspaceDir] = useState(false);
 
   const confirmationMessage = conversationTitle ? (
     <Trans
@@ -38,6 +42,21 @@ export function ConfirmDeleteModal({
           <BaseModalTitle title={t(I18nKey.CONVERSATION$CONFIRM_DELETE)} />
           <BaseModalDescription>{confirmationMessage}</BaseModalDescription>
         </div>
+        {showWorkspaceDirOption && (
+          <label
+            className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={deleteWorkspaceDir}
+              onChange={(e) => setDeleteWorkspaceDir(e.target.checked)}
+              className="accent-primary"
+              data-testid="delete-workspace-dir-checkbox"
+            />
+            {t(I18nKey.CONVERSATION$DELETE_WORKSPACE_DIR)}
+          </label>
+        )}
         <div
           className="flex flex-col gap-2 w-full"
           onClick={(event) => event.stopPropagation()}
@@ -45,7 +64,7 @@ export function ConfirmDeleteModal({
           <BrandButton
             type="button"
             variant="primary"
-            onClick={onConfirm}
+            onClick={() => onConfirm(deleteWorkspaceDir)}
             className="w-full"
             data-testid="confirm-button"
           >

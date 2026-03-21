@@ -10760,6 +10760,23 @@
     "uk": "Ви впевнені, що хочете видалити цю розмову? Цю дію не можна скасувати.",
     "ca": "Esteu segur que voleu eliminar aquesta conversa? Aquesta acció no es pot desfer."
   },
+  "CONVERSATION$DELETE_WORKSPACE_DIR": {
+    "en": "Also delete the workspace directory on the host",
+    "ja": "ホスト上のワークスペースディレクトリも削除する",
+    "zh-CN": "同时删除主机上的工作区目录",
+    "zh-TW": "同時刪除主機上的工作區目錄",
+    "ko-KR": "호스트의 워크스페이스 디렉터리도 삭제",
+    "no": "Slett også arbeidsmappekatalogen på verten",
+    "it": "Elimina anche la directory dell'area di lavoro sull'host",
+    "pt": "Excluir também o diretório de espaço de trabalho no host",
+    "es": "Eliminar también el directorio de espacio de trabajo en el host",
+    "ar": "حذف دليل مساحة العمل على المضيف أيضاً",
+    "fr": "Supprimer également le répertoire de travail sur l'hôte",
+    "tr": "Ana makinedeki çalışma alanı dizinini de sil",
+    "de": "Auch das Arbeitsverzeichnis auf dem Host löschen",
+    "uk": "Також видалити каталог робочого простору на хості",
+    "ca": "Elimina també el directori d'espai de treball a l'amfitrió"
+  },
   "CONVERSATION$DELETE_WARNING_WITH_TITLE": {
     "en": "Are you sure you want to delete the \"<title>{{title}}</title>\" conversation? This action cannot be undone.",
     "ja": "「<title>{{title}}</title>」の会話を削除してもよろしいですか？この操作は元に戻せません。",

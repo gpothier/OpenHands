@@ -104,9 +104,12 @@ async def resume_sandbox(
 @router.delete('/{id}', responses={404: {'description': 'Item not found'}})
 async def delete_sandbox(
     sandbox_id: str,
+    delete_workspace_dir: bool = False,
     sandbox_service: SandboxService = sandbox_service_dependency,
 ) -> Success:
-    exists = await sandbox_service.delete_sandbox(sandbox_id)
+    exists = await sandbox_service.delete_sandbox(
+        sandbox_id, delete_workspace_dir=delete_workspace_dir or None
+    )
     if not exists:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     return Success()

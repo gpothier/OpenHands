@@ -576,7 +576,9 @@ class DockerSandboxService(SandboxService):
         except (NotFound, APIError):
             return False
 
-    async def delete_sandbox(self, sandbox_id: str) -> bool:
+    async def delete_sandbox(
+        self, sandbox_id: str, delete_workspace_dir: bool | None = None
+    ) -> bool:
         """Delete a sandbox."""
         try:
             if not sandbox_id.startswith(self.container_name_prefix):
@@ -585,6 +587,52 @@ class DockerSandboxService(SandboxService):
 
             # Read workspace dir label before removing the container
             workspace_dir = container.labels.get(_OH_WORKSPACE_DIR_LABEL)
+
+            # Per-call delete_workspace_dir overrides the service-level default.
+            should_cleanup = (
+                delete_workspace_dir
+                if delete_workspace_dir is not None
+                else self.cleanup_workspace_dir
+            )
+
+            # If workspace cleanup is requested and the container is still running,
+            # delete the workspace contents from *inside* the container as root.
+            # Files created by the container user (UID 10001) live in directories
+            # that are not world-writable, so shutil.rmtree on the host would fail
+            # silently.  Running the deletion as root inside the container avoids
+            # the permission problem entirely.
+            # exec_run only works on a running (not paused/stopped) container.
+            # Stopped-container cleanup is left to shutil.rmtree below; a future
+            # improvement could spin up a temporary container to handle that case.
+            if should_cleanup and workspace_dir and container.status == 'running':
+                # Find the mount destination for workspace_dir inside the container
+                mount_dest = next(
+                    (
+                        m.get('Destination')
+                        for m in container.attrs.get('Mounts', [])
+                        if m.get('Source') == workspace_dir
+                    ),
+                    None,
+                )
+                if mount_dest:
+                    try:
+                        exit_code, output = container.exec_run(
+                            ['find', mount_dest, '-mindepth', '1', '-depth', '-delete'],
+                            user='root',
+                        )
+                        if exit_code != 0:
+                            _logger.warning(
+                                'In-container workspace cleanup exited %d for %s: %s',
+                                exit_code,
+                                sandbox_id,
+                                output,
+                            )
+                    except Exception as exc:
+                        _logger.debug(
+                            'In-container workspace cleanup failed for %s: %s',
+                            sandbox_id,
+                            exc,
+                        )
 
             # Stop the container if it's running
             if container.status in ['running', 'paused']:
@@ -602,10 +650,14 @@ class DockerSandboxService(SandboxService):
                 # Volume might not exist or already removed
                 pass
 
-            # Remove the auto-created workspace directory if applicable
-            if self.cleanup_workspace_dir and workspace_dir:
+            # Remove the workspace directory from the host.  After the in-container
+            # cleanup above the directory should be empty (or close to it), so
+            # shutil.rmtree will succeed where it failed before.
+            if should_cleanup and workspace_dir:
                 _logger.info(
-                    f'Deleting workspace directory for sandbox {sandbox_id}: {workspace_dir}'
+                    'Deleting workspace directory for sandbox %s: %s',
+                    sandbox_id,
+                    workspace_dir,
                 )
                 shutil.rmtree(workspace_dir, ignore_errors=True)
 

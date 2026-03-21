@@ -6,8 +6,14 @@ export const useDeleteConversation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (variables: { conversationId: string }) =>
-      ConversationService.deleteUserConversation(variables.conversationId),
+    mutationFn: (variables: {
+      conversationId: string;
+      deleteWorkspaceDir?: boolean;
+    }) =>
+      ConversationService.deleteUserConversation(
+        variables.conversationId,
+        variables.deleteWorkspaceDir,
+      ),
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: ["user", "conversations"] });
       const previousConversations = queryClient.getQueryData([

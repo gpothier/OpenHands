@@ -11,6 +11,7 @@ import { useUnifiedPauseConversationSandbox } from "./mutation/use-unified-stop-
 import { useGetTrajectory } from "./mutation/use-get-trajectory";
 import { useUpdateConversationPublicFlag } from "./mutation/use-update-conversation-public-flag";
 import { downloadTrajectory } from "#/utils/download-trajectory";
+import { useConfig } from "./query/use-config";
 import {
   displayErrorToast,
   displaySuccessToast,
@@ -48,6 +49,8 @@ export function useConversationNameContextMenu({
   const { mutate: getTrajectory } = useGetTrajectory();
   const { mutate: updatePublicFlag } = useUpdateConversationPublicFlag();
   const { data: conversation } = useActiveConversation();
+  const { data: config } = useConfig();
+  const autoWorkspaceDir = config?.feature_flags?.auto_workspace_dir ?? false;
   const metrics = useMetricsStore();
 
   const [metricsModalVisible, setMetricsModalVisible] = React.useState(false);
@@ -77,10 +80,10 @@ export function useConversationNameContextMenu({
     onContextMenuToggle?.(false);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = (deleteWorkspaceDir = false) => {
     if (conversationId) {
       deleteConversation(
-        { conversationId },
+        { conversationId, deleteWorkspaceDir },
         {
           onSuccess: () => {
             if (conversationId === currentConversationId) {
@@ -246,6 +249,7 @@ export function useConversationNameContextMenu({
     shareUrl,
     handleConfirmDelete,
     handleConfirmStop,
+    autoWorkspaceDir,
 
     // Modal states
     metricsModalVisible,

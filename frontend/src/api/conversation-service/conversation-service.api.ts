@@ -233,8 +233,13 @@ class ConversationService {
     return data.results;
   }
 
-  static async deleteUserConversation(conversationId: string): Promise<void> {
-    await openHands.delete(`/api/conversations/${conversationId}`);
+  static async deleteUserConversation(
+    conversationId: string,
+    deleteWorkspaceDir = false,
+  ): Promise<void> {
+    await openHands.delete(`/api/conversations/${conversationId}`, {
+      params: deleteWorkspaceDir ? { delete_workspace_dir: true } : undefined,
+    });
   }
 
   static async createConversation(

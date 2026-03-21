@@ -95,9 +95,9 @@ def _get_feature_flags() -> WebClientFeatureFlags:
     """Get feature flags from environment variables.
 
     Reads ENABLE_BILLING, HIDE_LLM_SETTINGS, ENABLE_JIRA, ENABLE_JIRA_DC,
-    ENABLE_LINEAR, HIDE_USERS_PAGE, HIDE_BILLING_PAGE, and HIDE_INTEGRATIONS_PAGE
-    from environment. Each flag is True only if the corresponding env var is
-    exactly 'true', otherwise False.
+    ENABLE_LINEAR, HIDE_USERS_PAGE, HIDE_BILLING_PAGE, HIDE_INTEGRATIONS_PAGE,
+    and SANDBOX_AUTO_WORKSPACE_DIR from environment. Each flag is True only if
+    the corresponding env var is exactly 'true', otherwise False.
     """
     return WebClientFeatureFlags(
         enable_billing=os.getenv('ENABLE_BILLING', 'false') == 'true',
@@ -108,6 +108,7 @@ def _get_feature_flags() -> WebClientFeatureFlags:
         hide_users_page=os.getenv('HIDE_USERS_PAGE', 'false') == 'true',
         hide_billing_page=os.getenv('HIDE_BILLING_PAGE', 'false') == 'true',
         hide_integrations_page=os.getenv('HIDE_INTEGRATIONS_PAGE', 'false') == 'true',
+        auto_workspace_dir=os.getenv('SANDBOX_AUTO_WORKSPACE_DIR', 'false') == 'true',
     )
 
 
@@ -135,13 +136,34 @@ class DefaultWebClientConfigInjector(WebClientConfigInjector):
     github_app_slug: str | None = Field(default_factory=_get_github_app_slug)
 
     async def get_web_client_config(self) -> WebClientConfig:
+        import logging
+
         from openhands.app_server.config import get_global_config
 
+        logger = logging.getLogger(__name__)
         config = get_global_config()
+
+        # auto_workspace_dir may be configured via config.toml rather than the
+        # SANDBOX_AUTO_WORKSPACE_DIR env var, so read it from the sandbox injector
+        # directly (works for any SandboxServiceInjector that exposes the field).
+        feature_flags = self.feature_flags
+        sandbox_auto_workspace_dir = getattr(
+            config.sandbox, 'auto_workspace_dir', None
+        )
+        if sandbox_auto_workspace_dir is not None:
+            feature_flags = feature_flags.model_copy(
+                update={'auto_workspace_dir': sandbox_auto_workspace_dir}
+            )
+        logger.debug(
+            'web-client config: auto_workspace_dir=%s (sandbox=%s)',
+            feature_flags.auto_workspace_dir,
+            type(config.sandbox).__name__,
+        )
+
         result = WebClientConfig(
             app_mode=config.app_mode,
             posthog_client_key=self.posthog_client_key,
-            feature_flags=self.feature_flags,
+            feature_flags=feature_flags,
             providers_configured=self.providers_configured,
             maintenance_start_time=self.maintenance_start_time,
             auth_url=self.auth_url,

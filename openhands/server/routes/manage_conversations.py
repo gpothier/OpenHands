@@ -550,6 +550,7 @@ async def delete_conversation(
     request: Request,
     conversation_id: str = Depends(validate_conversation_id),
     user_id: str | None = Depends(get_user_id),
+    delete_workspace_dir: bool = False,
     app_conversation_service: AppConversationService = app_conversation_service_dependency,
     app_conversation_info_service: AppConversationInfoService = app_conversation_info_service_dependency,
     sandbox_service: SandboxService = sandbox_service_dependency,
@@ -572,6 +573,7 @@ async def delete_conversation(
         sandbox_service,
         db_session,
         httpx_client,
+        delete_workspace_dir=delete_workspace_dir,
     )
     if v1_result is not None:
         return v1_result
@@ -591,6 +593,7 @@ async def _try_delete_v1_conversation(
     sandbox_service: SandboxService,
     db_session: AsyncSession,
     httpx_client: httpx.AsyncClient,
+    delete_workspace_dir: bool = False,
 ) -> bool | None:
     """Try to delete a V1 conversation. Returns None if not a V1 conversation."""
     result = None
@@ -631,6 +634,7 @@ async def _try_delete_v1_conversation(
                     app_conversation_info.sandbox_id,
                     db_session,
                     httpx_client,
+                    delete_workspace_dir=delete_workspace_dir,
                 )
             )
     except Exception:
@@ -645,13 +649,17 @@ async def _finalize_delete_and_close_connections(
     sandbox_id: str,
     db_session: AsyncSession,
     httpx_client: httpx.AsyncClient,
+    delete_workspace_dir: bool = False,
 ):
     try:
         num_conversations_in_sandbox = await _get_num_conversations_in_sandbox(
             sandbox_service, sandbox_id, httpx_client
         )
         if num_conversations_in_sandbox == 0:
-            await sandbox_service.delete_sandbox(sandbox_id)
+            await sandbox_service.delete_sandbox(
+                sandbox_id,
+                delete_workspace_dir=delete_workspace_dir or None,
+            )
         await db_session.commit()
     finally:
         await asyncio.gather(

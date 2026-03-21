@@ -179,8 +179,15 @@ class SandboxService(ABC):
         """
 
     @abstractmethod
-    async def delete_sandbox(self, sandbox_id: str) -> bool:
+    async def delete_sandbox(
+        self, sandbox_id: str, delete_workspace_dir: bool | None = None
+    ) -> bool:
         """Begin the process of deleting a sandbox (which may involve stopping it).
+
+        Args:
+            sandbox_id: The sandbox to delete.
+            delete_workspace_dir: Override the service-level cleanup_workspace_dir
+                setting. None means use the service default.
 
         Return False if the sandbox did not exist.
         """

@@ -26,6 +26,7 @@ export interface WebClientFeatureFlags {
   hide_users_page: boolean;
   hide_billing_page: boolean;
   hide_integrations_page: boolean;
+  auto_workspace_dir: boolean;
 }
 
 export interface WebClientConfig {
