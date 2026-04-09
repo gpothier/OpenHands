@@ -29,6 +29,7 @@ from openhands.app_server.sandbox.sandbox_models import (
 )
 from openhands.app_server.sandbox.sandbox_service import (
     SESSION_API_KEY_VARIABLE,
+    SSH_PUBLIC_KEYS_VARIABLE,
     WEBHOOK_CALLBACK_VARIABLE,
     SandboxService,
     SandboxServiceInjector,
@@ -351,7 +352,10 @@ class DockerSandboxService(SandboxService):
             return None
 
     async def start_sandbox(
-        self, sandbox_spec_id: str | None = None, sandbox_id: str | None = None
+        self,
+        sandbox_spec_id: str | None = None,
+        sandbox_id: str | None = None,
+        ssh_public_keys: list[str] | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
         # Warn about port collision risk when using host network mode with multiple sandboxes
@@ -390,6 +394,10 @@ class DockerSandboxService(SandboxService):
         env_vars[WEBHOOK_CALLBACK_VARIABLE] = (
             f'http://host.docker.internal:{self.host_port}/api/v1/webhooks'
         )
+
+        # Pass SSH public keys for passwordless SSH access
+        if ssh_public_keys:
+            env_vars[SSH_PUBLIC_KEYS_VARIABLE] = '\n'.join(ssh_public_keys)
 
         # Set CORS origins for remote browser access when web_url is configured.
         # This allows the agent-server container to accept requests from the
