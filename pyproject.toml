@@ -57,7 +57,7 @@ dependencies = [
   "numpy",
   "openai==2.8",
   "openhands-aci==0.3.3",
-  "openhands-agent-server==1.16.1",
+  "openhands-agent-server @ git+https://github.com/gpothier/software-agent-sdk.git@feature/ssh-service#subdirectory=openhands-agent-server",
   "openhands-sdk==1.16.1",
   "openhands-tools==1.16.1",
   "opentelemetry-api>=1.33.1",
@@ -252,7 +252,7 @@ pybase62 = "^1.0.0"
 
 # V1 dependencies
 openhands-sdk = "1.16.1"
-openhands-agent-server = "1.16.1"
+openhands-agent-server = { git = "https://github.com/gpothier/software-agent-sdk.git", branch = "feature/ssh-service", subdirectory = "openhands-agent-server" }
 openhands-tools = "1.16.1"
 jwcrypto = ">=1.5.6"
 sqlalchemy = { extras = [ "asyncio" ], version = "^2.0.40" }
