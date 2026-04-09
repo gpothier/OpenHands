@@ -217,9 +217,11 @@ RUN apt-get update && \
     mkdir -p /run/sshd && \
     # Generate host keys
     ssh-keygen -A && \
-    # Configure sshd for password authentication
+    # Configure sshd for both password and public key authentication
     sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords no/' /etc/ssh/sshd_config && \
+    sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#AuthorizedKeysFile/AuthorizedKeysFile/' /etc/ssh/sshd_config && \
     sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config && \
     echo 'Port 2222' >> /etc/ssh/sshd_config && \
     # Set password for openhands user (password: "openhands")
@@ -227,7 +229,9 @@ RUN apt-get update && \
     # Create SSH directory for openhands user
     mkdir -p /home/openhands/.ssh && \
     chmod 700 /home/openhands/.ssh && \
-    chown openhands:openhands /home/openhands/.ssh
+    touch /home/openhands/.ssh/authorized_keys && \
+    chmod 600 /home/openhands/.ssh/authorized_keys && \
+    chown -R openhands:openhands /home/openhands/.ssh
 {% endmacro %}
 
 {% macro install_dependencies_root() %}
