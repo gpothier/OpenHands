@@ -20,7 +20,7 @@ from openhands.app_server.sandbox.sandbox_service import (
 from openhands.app_server.sandbox.session_auth import validate_session_key
 from openhands.app_server.user.auth_user_context import AuthUserContext
 from openhands.app_server.utils.dependencies import get_dependencies
-from openhands.server.user_auth import get_settings_store
+from openhands.server.user_auth import get_user_settings_store
 from openhands.server.user_auth.user_auth import (
     get_for_user as get_user_auth_for_user,
 )
@@ -76,14 +76,15 @@ async def batch_get_sandboxes(
 async def start_sandbox(
     sandbox_spec_id: str | None = None,
     sandbox_service: SandboxService = sandbox_service_dependency,
-    settings_store: SettingsStore = Depends(get_settings_store),
+    settings_store: SettingsStore | None = Depends(get_user_settings_store),
 ) -> SandboxInfo:
     # Get user's SSH public keys from settings
     ssh_public_keys: list[str] | None = None
     try:
-        settings = await settings_store.load()
-        if settings and settings.ssh_public_keys:
-            ssh_public_keys = [k.key for k in settings.ssh_public_keys]
+        if settings_store:
+            settings = await settings_store.load()
+            if settings and settings.ssh_public_keys:
+                ssh_public_keys = [k.key for k in settings.ssh_public_keys]
     except Exception as e:
         _logger.warning(f'Failed to load SSH keys from settings: {e}')
 
