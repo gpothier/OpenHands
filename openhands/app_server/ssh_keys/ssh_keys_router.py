@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from openhands.app_server.utils.dependencies import get_dependencies
 from openhands.app_server.utils.models import EditResponse
-from openhands.server.user_auth import get_settings, get_settings_store
+from openhands.server.user_auth import get_user_settings, get_user_settings_store
 from openhands.storage.data_models.settings import SSHPublicKey, Settings
 from openhands.storage.settings.settings_store import SettingsStore
 
@@ -91,7 +91,7 @@ def _settings_to_key_responses(settings: Settings | None) -> list[SSHKeyResponse
 
 @router.get('', response_model=SSHKeysListResponse)
 async def list_ssh_keys(
-    settings: Settings | None = Depends(get_settings),
+    settings: Settings | None = Depends(get_user_settings),
 ) -> SSHKeysListResponse:
     """List all SSH public keys.
 
@@ -106,7 +106,7 @@ async def list_ssh_keys(
 @router.post('', status_code=status.HTTP_201_CREATED, response_model=SSHKeyResponse)
 async def add_ssh_key(
     request: SSHKeyRequest,
-    settings_store: SettingsStore = Depends(get_settings_store),
+    settings_store: SettingsStore | None = Depends(get_user_settings_store),
 ) -> SSHKeyResponse:
     """Add a new SSH public key.
 
@@ -117,6 +117,11 @@ async def add_ssh_key(
         400: Invalid key format or key already exists
         500: Error adding SSH key
     """
+    if settings_store is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='User authentication required',
+        )
     existing_settings = await settings_store.load()
     ssh_keys = list(existing_settings.ssh_public_keys) if existing_settings else []
 
@@ -153,7 +158,7 @@ async def add_ssh_key(
 async def update_ssh_key(
     key_id: str,
     request: SSHKeyRequest,
-    settings_store: SettingsStore = Depends(get_settings_store),
+    settings_store: SettingsStore | None = Depends(get_user_settings_store),
 ) -> Any:
     """Update an existing SSH public key.
 
@@ -165,6 +170,11 @@ async def update_ssh_key(
         404: SSH key not found
         500: Error updating SSH key
     """
+    if settings_store is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='User authentication required',
+        )
     existing_settings = await settings_store.load()
     if not existing_settings or not existing_settings.ssh_public_keys:
         raise HTTPException(
@@ -215,7 +225,7 @@ async def update_ssh_key(
 @router.delete('/{key_id}')
 async def delete_ssh_key(
     key_id: str,
-    settings_store: SettingsStore = Depends(get_settings_store),
+    settings_store: SettingsStore | None = Depends(get_user_settings_store),
 ) -> EditResponse:
     """Delete an SSH public key.
 
@@ -226,6 +236,11 @@ async def delete_ssh_key(
         404: SSH key not found
         500: Error deleting SSH key
     """
+    if settings_store is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='User authentication required',
+        )
     existing_settings = await settings_store.load()
     if not existing_settings or not existing_settings.ssh_public_keys:
         raise HTTPException(
