@@ -40,6 +40,7 @@ export function transformVSCodeUrl(vsCodeUrl: string | null): string | null {
  * @param port The SSH port
  * @param folderPath The folder path to open on the remote
  * @param username The SSH username (default: 'openhands')
+ * @param newWindow Whether to request opening in a new window (default: true)
  * @returns The VSCode Remote SSH URI
  */
 export function buildVSCodeRemoteSSHUrl(
@@ -47,10 +48,13 @@ export function buildVSCodeRemoteSSHUrl(
   port: number,
   folderPath: string,
   username: string = "openhands",
+  newWindow: boolean = true,
 ): string {
   // VSCode Remote SSH URI format: vscode://vscode-remote/ssh-remote+user@host:port/path
   const sshTarget = `${username}@${host}:${port}`;
-  return `vscode://vscode-remote/ssh-remote+${sshTarget}${folderPath}`;
+  const baseUrl = `vscode://vscode-remote/ssh-remote+${sshTarget}${folderPath}`;
+  // Add windowId=_blank to request a new window (supported in recent VSCode versions)
+  return newWindow ? `${baseUrl}?windowId=_blank` : baseUrl;
 }
 
 /**

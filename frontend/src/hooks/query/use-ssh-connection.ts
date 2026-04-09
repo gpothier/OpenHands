@@ -18,7 +18,7 @@ interface SSHConnectionResult {
   error: string | null;
 }
 
-const DEFAULT_WORKSPACE_PATH = "/workspace";
+const DEFAULT_WORKSPACE_PATH = "/workspace/project";
 
 /**
  * Hook to get SSH connection info for V1 conversations
