@@ -216,16 +216,20 @@ class DockerSandboxService(SandboxService):
                                     )
                                 )
 
-        if not container.image.tags:
-            _logger.debug(
-                f'Skipping container {container.name!r}: image has no tags (image id: {container.image.id})'
-            )
-            return None
+        # Get sandbox_spec_id from container labels (preferred) or fall back to image tag
+        sandbox_spec_id = container.labels.get('sandbox_spec_id')
+        if sandbox_spec_id is None:
+            if not container.image.tags:
+                _logger.debug(
+                    f'Skipping container {container.name!r}: image has no tags (image id: {container.image.id})'
+                )
+                return None
+            sandbox_spec_id = container.image.tags[0]
 
         return SandboxInfo(
             id=container.name,
             created_by_user_id=None,
-            sandbox_spec_id=container.image.tags[0],
+            sandbox_spec_id=sandbox_spec_id,
             status=status,
             session_api_key=session_api_key,
             exposed_urls=exposed_urls,
