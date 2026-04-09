@@ -18,6 +18,7 @@ from openhands.app_server.errors import SandboxError
 from openhands.app_server.sandbox.docker_sandbox_spec_service import get_docker_client
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
+    SSH,
     VSCODE,
     WORKER_1,
     WORKER_2,
@@ -587,6 +588,13 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                     'The port on which the VSCode server runs within the container'
                 ),
                 container_port=8001,
+            ),
+            ExposedPort(
+                name=SSH,
+                description=(
+                    'The port on which the SSH server runs for local VSCode Remote-SSH access'
+                ),
+                container_port=2222,
             ),
             ExposedPort(
                 name=WORKER_1,
