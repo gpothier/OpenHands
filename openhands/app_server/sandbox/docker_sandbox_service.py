@@ -58,6 +58,12 @@ def _get_kvm_enabled_default() -> bool:
     return value.lower() in ('true', '1', 'yes')
 
 
+def _get_docker_socket_passthrough_default() -> bool:
+    """Get the default value for docker_socket_passthrough from environment variables."""
+    value = os.getenv('SANDBOX_DOCKER_SOCKET_PASSTHROUGH', '')
+    return value.lower() in ('true', '1', 'yes')
+
+
 class VolumeMount(BaseModel):
     """Mounted volume within the container."""
 
@@ -102,6 +108,7 @@ class DockerSandboxService(SandboxService):
     startup_grace_seconds: int = STARTUP_GRACE_SECONDS
     use_host_network: bool = False
     kvm_enabled: bool = False
+    docker_socket_passthrough: bool = False
 
     def _find_unused_port(self) -> int:
         """Find an unused port on the host machine."""
@@ -436,6 +443,24 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
+        # Mount Docker socket if passthrough is enabled
+        if self.docker_socket_passthrough:
+            docker_socket_path = '/var/run/docker.sock'
+            if os.path.exists(docker_socket_path):
+                volumes[docker_socket_path] = {
+                    'bind': docker_socket_path,
+                    'mode': 'rw',
+                }
+                _logger.warning(
+                    f'Starting sandbox {container_name} with Docker socket passthrough. '
+                    'This grants the sandbox full access to the host Docker daemon.'
+                )
+            else:
+                _logger.warning(
+                    f'Docker socket passthrough enabled but {docker_socket_path} not found. '
+                    'Skipping Docker socket mount.'
+                )
+
         # Determine network mode
         network_mode = 'host' if self.use_host_network else None
 
@@ -647,6 +672,19 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Configure via SANDBOX_KVM_ENABLED environment variable.'
         ),
     )
+    docker_socket_passthrough: bool = Field(
+        default_factory=_get_docker_socket_passthrough_default,
+        description=(
+            'Whether to mount the host Docker socket (/var/run/docker.sock) into '
+            'sandbox containers. When enabled, sandboxes can use the host Docker '
+            'daemon directly instead of running Docker-in-Docker. WARNING: This '
+            'grants sandboxes full access to the host Docker daemon, which is '
+            'equivalent to root access on the host. Only enable this in trusted '
+            'environments. For security, consider using OPA Docker authorization plugin '
+            'to restrict Docker operations. Configure via SANDBOX_DOCKER_SOCKET_PASSTHROUGH '
+            'environment variable.'
+        ),
+    )
 
     async def inject(
         self, state: InjectorState, request: Request | None = None
@@ -682,4 +720,5 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 startup_grace_seconds=self.startup_grace_seconds,
                 use_host_network=self.use_host_network,
                 kvm_enabled=self.kvm_enabled,
+                docker_socket_passthrough=self.docker_socket_passthrough,
             )

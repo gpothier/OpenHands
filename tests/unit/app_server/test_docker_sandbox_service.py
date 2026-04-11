@@ -1649,3 +1649,241 @@ class TestDockerSandboxServiceHostNetwork:
 
         # Verify no warning was logged about port collision
         mock_logger.warning.assert_not_called()
+
+
+class TestDockerSandboxServiceDockerSocketPassthrough:
+    """Tests for Docker socket passthrough functionality."""
+
+    @patch('openhands.app_server.sandbox.docker_sandbox_service._logger')
+    @patch('openhands.app_server.sandbox.docker_sandbox_service.os.path.exists')
+    @patch('openhands.app_server.sandbox.docker_sandbox_service.base62.encodebytes')
+    @patch('os.urandom')
+    async def test_start_sandbox_with_docker_socket_passthrough(
+        self,
+        mock_urandom,
+        mock_encodebytes,
+        mock_path_exists,
+        mock_logger,
+        mock_sandbox_spec_service,
+        mock_httpx_client,
+        mock_docker_client,
+    ):
+        """Test that Docker socket is mounted when passthrough is enabled."""
+        mock_urandom.side_effect = [b'container_id', b'session_key']
+        mock_encodebytes.side_effect = ['test_container_id', 'test_session_key']
+        mock_path_exists.return_value = True
+
+        mock_container = MagicMock()
+        mock_container.name = 'oh-test-test_container_id'
+        mock_container.status = 'running'
+        mock_container.image.tags = ['test-image:latest']
+        mock_container.attrs = {
+            'Created': '2024-01-15T10:30:00.000000000Z',
+            'Config': {
+                'Env': ['OH_SESSION_API_KEYS_0=test_session_key'],
+                'WorkingDir': '/workspace',
+            },
+            'NetworkSettings': {'Ports': {'8000/tcp': [{'HostPort': '12345'}]}},
+        }
+        mock_docker_client.containers.run.return_value = mock_container
+
+        service = DockerSandboxService(
+            sandbox_spec_service=mock_sandbox_spec_service,
+            container_name_prefix='oh-test-',
+            host_port=3000,
+            container_url_pattern='http://localhost:{port}',
+            mounts=[],
+            exposed_ports=[
+                ExposedPort(
+                    name=AGENT_SERVER, description='Agent server', container_port=8000
+                ),
+            ],
+            health_check_path='/health',
+            httpx_client=mock_httpx_client,
+            max_num_sandboxes=3,
+            docker_client=mock_docker_client,
+            docker_socket_passthrough=True,
+        )
+
+        with patch.object(service, 'pause_old_sandboxes', return_value=[]):
+            result = await service.start_sandbox()
+
+        assert result is not None
+        call_args = mock_docker_client.containers.run.call_args
+        volumes = call_args[1]['volumes']
+        assert '/var/run/docker.sock' in volumes
+        assert volumes['/var/run/docker.sock']['bind'] == '/var/run/docker.sock'
+        assert volumes['/var/run/docker.sock']['mode'] == 'rw'
+
+        # Verify warning was logged about security implications
+        mock_logger.warning.assert_called_once()
+        warning_message = mock_logger.warning.call_args[0][0]
+        assert 'Docker socket passthrough' in warning_message
+
+    @patch('openhands.app_server.sandbox.docker_sandbox_service._logger')
+    @patch('openhands.app_server.sandbox.docker_sandbox_service.os.path.exists')
+    @patch('openhands.app_server.sandbox.docker_sandbox_service.base62.encodebytes')
+    @patch('os.urandom')
+    async def test_start_sandbox_docker_socket_missing(
+        self,
+        mock_urandom,
+        mock_encodebytes,
+        mock_path_exists,
+        mock_logger,
+        mock_sandbox_spec_service,
+        mock_httpx_client,
+        mock_docker_client,
+    ):
+        """Test that warning is logged when docker socket is missing."""
+        mock_urandom.side_effect = [b'container_id', b'session_key']
+        mock_encodebytes.side_effect = ['test_container_id', 'test_session_key']
+        mock_path_exists.return_value = False  # Socket doesn't exist
+
+        mock_container = MagicMock()
+        mock_container.name = 'oh-test-test_container_id'
+        mock_container.status = 'running'
+        mock_container.image.tags = ['test-image:latest']
+        mock_container.attrs = {
+            'Created': '2024-01-15T10:30:00.000000000Z',
+            'Config': {
+                'Env': ['OH_SESSION_API_KEYS_0=test_session_key'],
+                'WorkingDir': '/workspace',
+            },
+            'NetworkSettings': {'Ports': {'8000/tcp': [{'HostPort': '12345'}]}},
+        }
+        mock_docker_client.containers.run.return_value = mock_container
+
+        service = DockerSandboxService(
+            sandbox_spec_service=mock_sandbox_spec_service,
+            container_name_prefix='oh-test-',
+            host_port=3000,
+            container_url_pattern='http://localhost:{port}',
+            mounts=[],
+            exposed_ports=[
+                ExposedPort(
+                    name=AGENT_SERVER, description='Agent server', container_port=8000
+                ),
+            ],
+            health_check_path='/health',
+            httpx_client=mock_httpx_client,
+            max_num_sandboxes=3,
+            docker_client=mock_docker_client,
+            docker_socket_passthrough=True,
+        )
+
+        with patch.object(service, 'pause_old_sandboxes', return_value=[]):
+            result = await service.start_sandbox()
+
+        assert result is not None
+        call_args = mock_docker_client.containers.run.call_args
+        volumes = call_args[1]['volumes']
+        # Socket should NOT be mounted since it doesn't exist
+        assert '/var/run/docker.sock' not in volumes
+
+        # Verify warning was logged about missing socket
+        mock_logger.warning.assert_called_once()
+        warning_message = mock_logger.warning.call_args[0][0]
+        assert 'not found' in warning_message
+
+    @patch('openhands.app_server.sandbox.docker_sandbox_service.base62.encodebytes')
+    @patch('os.urandom')
+    async def test_start_sandbox_without_docker_socket_passthrough(
+        self,
+        mock_urandom,
+        mock_encodebytes,
+        mock_sandbox_spec_service,
+        mock_httpx_client,
+        mock_docker_client,
+    ):
+        """Test that Docker socket is not mounted when passthrough is disabled."""
+        mock_urandom.side_effect = [b'container_id', b'session_key']
+        mock_encodebytes.side_effect = ['test_container_id', 'test_session_key']
+
+        mock_container = MagicMock()
+        mock_container.name = 'oh-test-test_container_id'
+        mock_container.status = 'running'
+        mock_container.image.tags = ['test-image:latest']
+        mock_container.attrs = {
+            'Created': '2024-01-15T10:30:00.000000000Z',
+            'Config': {
+                'Env': ['OH_SESSION_API_KEYS_0=test_session_key'],
+                'WorkingDir': '/workspace',
+            },
+            'NetworkSettings': {'Ports': {'8000/tcp': [{'HostPort': '12345'}]}},
+        }
+        mock_docker_client.containers.run.return_value = mock_container
+
+        service = DockerSandboxService(
+            sandbox_spec_service=mock_sandbox_spec_service,
+            container_name_prefix='oh-test-',
+            host_port=3000,
+            container_url_pattern='http://localhost:{port}',
+            mounts=[],
+            exposed_ports=[
+                ExposedPort(
+                    name=AGENT_SERVER, description='Agent server', container_port=8000
+                ),
+            ],
+            health_check_path='/health',
+            httpx_client=mock_httpx_client,
+            max_num_sandboxes=3,
+            docker_client=mock_docker_client,
+            docker_socket_passthrough=False,  # Disabled
+        )
+
+        with patch.object(service, 'pause_old_sandboxes', return_value=[]):
+            result = await service.start_sandbox()
+
+        assert result is not None
+        call_args = mock_docker_client.containers.run.call_args
+        volumes = call_args[1]['volumes']
+        assert '/var/run/docker.sock' not in volumes
+
+
+class TestDockerSocketPassthroughEnvVar:
+    """Tests for Docker socket passthrough environment variable handling."""
+
+    def test_docker_socket_passthrough_env_var_true(self, monkeypatch):
+        """Test that SANDBOX_DOCKER_SOCKET_PASSTHROUGH=true enables passthrough."""
+        from openhands.app_server.sandbox.docker_sandbox_service import (
+            _get_docker_socket_passthrough_default,
+        )
+
+        monkeypatch.setenv('SANDBOX_DOCKER_SOCKET_PASSTHROUGH', 'true')
+        assert _get_docker_socket_passthrough_default() is True
+
+    def test_docker_socket_passthrough_env_var_1(self, monkeypatch):
+        """Test that SANDBOX_DOCKER_SOCKET_PASSTHROUGH=1 enables passthrough."""
+        from openhands.app_server.sandbox.docker_sandbox_service import (
+            _get_docker_socket_passthrough_default,
+        )
+
+        monkeypatch.setenv('SANDBOX_DOCKER_SOCKET_PASSTHROUGH', '1')
+        assert _get_docker_socket_passthrough_default() is True
+
+    def test_docker_socket_passthrough_env_var_yes(self, monkeypatch):
+        """Test that SANDBOX_DOCKER_SOCKET_PASSTHROUGH=yes enables passthrough."""
+        from openhands.app_server.sandbox.docker_sandbox_service import (
+            _get_docker_socket_passthrough_default,
+        )
+
+        monkeypatch.setenv('SANDBOX_DOCKER_SOCKET_PASSTHROUGH', 'yes')
+        assert _get_docker_socket_passthrough_default() is True
+
+    def test_docker_socket_passthrough_env_var_false(self, monkeypatch):
+        """Test that SANDBOX_DOCKER_SOCKET_PASSTHROUGH=false disables passthrough."""
+        from openhands.app_server.sandbox.docker_sandbox_service import (
+            _get_docker_socket_passthrough_default,
+        )
+
+        monkeypatch.setenv('SANDBOX_DOCKER_SOCKET_PASSTHROUGH', 'false')
+        assert _get_docker_socket_passthrough_default() is False
+
+    def test_docker_socket_passthrough_env_var_unset(self, monkeypatch):
+        """Test that unset SANDBOX_DOCKER_SOCKET_PASSTHROUGH defaults to False."""
+        from openhands.app_server.sandbox.docker_sandbox_service import (
+            _get_docker_socket_passthrough_default,
+        )
+
+        monkeypatch.delenv('SANDBOX_DOCKER_SOCKET_PASSTHROUGH', raising=False)
+        assert _get_docker_socket_passthrough_default() is False
