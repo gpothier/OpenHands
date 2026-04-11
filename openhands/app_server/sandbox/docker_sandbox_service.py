@@ -66,7 +66,7 @@ def _get_auto_workspace_dir_default() -> bool:
 
 def _get_workspace_dir_base_default() -> str:
     return os.getenv('SANDBOX_WORKSPACE_DIR_BASE') or os.path.expanduser(
-        '~/.openhands/workspaces'
+        '~/.openhands/sandboxes'
     )
 
 
@@ -465,9 +465,18 @@ class DockerSandboxService(SandboxService):
         # working_dir itself (e.g. /workspace/project) so that sibling directories
         # such as /workspace/conversations and /workspace/bash_events are also
         # persisted on the host.
+        #
+        # Directory structure:
+        #   {base}/sandboxes/{container_name}/
+        #   └── workspace/     ← mounted into sandbox
+        #       └── project/   ← working_dir basename
+        #
+        # The sandbox_base directory can contain sibling directories for other
+        # features (e.g., dockerd-socket/, dockerd-user-home/ for rootless docker).
         if self.auto_workspace_dir:
-            base = self.workspace_dir_base or os.path.expanduser('~/.openhands/workspaces')
-            workspace_dir = os.path.join(base, container_name)
+            base = self.workspace_dir_base or os.path.expanduser('~/.openhands/sandboxes')
+            sandbox_base = os.path.join(base, container_name)
+            workspace_dir = os.path.join(sandbox_base, 'workspace')
             os.makedirs(workspace_dir, exist_ok=True)
             os.chmod(workspace_dir, 0o777)
             # Pre-create the working_dir subdirectory (e.g. /workspace/project).
@@ -650,16 +659,19 @@ class DockerSandboxService(SandboxService):
                 # Volume might not exist or already removed
                 pass
 
-            # Remove the workspace directory from the host.  After the in-container
-            # cleanup above the directory should be empty (or close to it), so
+            # Remove the sandbox base directory from the host.  After the in-container
+            # cleanup above the workspace should be empty (or close to it), so
             # shutil.rmtree will succeed where it failed before.
+            # We delete the parent of workspace_dir (sandbox_base) to clean up
+            # the entire per-sandbox directory including any sibling directories.
             if should_cleanup and workspace_dir:
+                sandbox_base = os.path.dirname(workspace_dir)
                 _logger.info(
-                    'Deleting workspace directory for sandbox %s: %s',
+                    'Deleting sandbox directory for %s: %s',
                     sandbox_id,
-                    workspace_dir,
+                    sandbox_base,
                 )
-                shutil.rmtree(workspace_dir, ignore_errors=True)
+                shutil.rmtree(sandbox_base, ignore_errors=True)
 
             return True
         except (NotFound, APIError):
@@ -757,7 +769,6 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'is problematic. Configure via AGENT_SERVER_USE_HOST_NETWORK environment variable.'
         ),
     )
-<<<<<<< HEAD
     kvm_enabled: bool = Field(
         default_factory=_get_kvm_enabled_default,
         description=(
@@ -766,7 +777,8 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'virtual machines instead of using slower emulation. Requires the host '
             'to have KVM available (/dev/kvm must exist and be accessible). '
             'Configure via SANDBOX_KVM_ENABLED environment variable.'
-=======
+        ),
+    )
     auto_workspace_dir: bool = Field(
         default_factory=_get_auto_workspace_dir_default,
         description=(
@@ -780,7 +792,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
         description=(
             'Base directory under which per-sandbox workspace directories are created '
             'when auto_workspace_dir=True. Each sandbox gets a subdirectory named '
-            'after its container. Defaults to ~/.openhands/workspaces. '
+            'after its container. Defaults to ~/.openhands/sandboxes. '
             'Configure via SANDBOX_WORKSPACE_DIR_BASE environment variable.'
         ),
     )
@@ -790,7 +802,6 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Whether to delete the auto-created workspace directory when a sandbox is '
             'deleted. Defaults to True. Set to False to retain files after sandbox '
             'deletion. Configure via SANDBOX_CLEANUP_WORKSPACE_DIR environment variable.'
->>>>>>> 638884f59 (feat(sandbox): auto-create unique host workspace directory per sandbox)
         ),
     )
 
@@ -827,11 +838,8 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 extra_hosts=self.extra_hosts,
                 startup_grace_seconds=self.startup_grace_seconds,
                 use_host_network=self.use_host_network,
-<<<<<<< HEAD
                 kvm_enabled=self.kvm_enabled,
-=======
                 auto_workspace_dir=self.auto_workspace_dir,
                 workspace_dir_base=self.workspace_dir_base,
                 cleanup_workspace_dir=self.cleanup_workspace_dir,
->>>>>>> 638884f59 (feat(sandbox): auto-create unique host workspace directory per sandbox)
             )
