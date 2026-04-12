@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import socket
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -41,6 +42,15 @@ from openhands.app_server.utils.docker_utils import (
 _logger = logging.getLogger(__name__)
 STARTUP_GRACE_SECONDS = 15
 
+# Label for rootless Docker per sandbox feature
+# The host daemon (oh-rootless-docker-manager) watches for containers with this label
+# and sets up a rootless Docker daemon for each sandbox
+_OH_ROOTLESS_DOCKER_LABEL = 'openhands.rootless-docker'
+
+# Subdirectory names within the per-sandbox base directory
+_DOCKERD_SOCKET_SUBDIR = 'dockerd-socket'
+_DOCKERD_USER_HOME_SUBDIR = 'dockerd-user-home'
+
 
 def _get_use_host_network_default() -> bool:
     """Get the default value for use_host_network from environment variables.
@@ -56,6 +66,44 @@ def _get_kvm_enabled_default() -> bool:
     """Get the default value for kvm_enabled from environment variables."""
     value = os.getenv('SANDBOX_KVM_ENABLED', '')
     return value.lower() in ('true', '1', 'yes')
+
+
+def _get_rootless_docker_enabled_default() -> bool:
+    """Get the default value for rootless_docker_enabled from environment variables.
+
+    When enabled, each sandbox gets its own isolated rootless Docker daemon.
+    This requires the oh-rootless-docker-manager daemon to be running on the host.
+    """
+    value = os.getenv('SANDBOX_ROOTLESS_DOCKER_ENABLED', '')
+    return value.lower() in ('true', '1', 'yes')
+
+
+def _get_sandbox_dir_base_default() -> str:
+    """Get the default base directory for per-sandbox directories (container path).
+
+    Each sandbox gets a directory at {base}/{container_name}/ containing:
+    - dockerd-socket/: rootless Docker socket (if rootless_docker_enabled)
+    - dockerd-user-home/: home directory for the sandbox user
+    - workspace/: workspace data (if auto_workspace_dir enabled, in that branch)
+
+    This is the path as seen from inside the OpenHands container.
+    For bind mounts to sandbox containers, use SANDBOX_DIR_BASE_HOST.
+    """
+    return os.getenv('SANDBOX_DIR_BASE') or os.path.expanduser(
+        '~/.openhands/sandboxes'
+    )
+
+
+def _get_sandbox_dir_base_host_default() -> str:
+    """Get the host path for per-sandbox directories (for bind mounts).
+
+    When creating sandbox containers, bind mount paths must be HOST paths,
+    not paths inside the OpenHands container. This setting specifies
+    the host path that corresponds to SANDBOX_DIR_BASE.
+
+    Default matches the oh-rootless-docker-manager daemon's default.
+    """
+    return os.getenv('SANDBOX_DIR_BASE_HOST') or '/var/lib/cali-openhands/state/sandboxes'
 
 
 class VolumeMount(BaseModel):
@@ -102,6 +150,9 @@ class DockerSandboxService(SandboxService):
     startup_grace_seconds: int = STARTUP_GRACE_SECONDS
     use_host_network: bool = False
     kvm_enabled: bool = False
+    rootless_docker_enabled: bool = False
+    sandbox_dir_base: str | None = None
+    sandbox_dir_base_host: str | None = None
 
     def _find_unused_port(self) -> int:
         """Find an unused port on the host machine."""
@@ -436,6 +487,52 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
+        # Rootless Docker per sandbox setup
+        # Creates isolated Docker daemon for each sandbox via oh-rootless-docker-manager
+        # Directory structure:
+        #   {sandbox_dir_base}/{container_name}/
+        #   ├── dockerd-socket/    ← mounted into sandbox at /var/run/docker
+        #   └── dockerd-user-home/ ← home directory for the sandbox user
+        if self.rootless_docker_enabled:
+            # Container path (for creating directories from within OpenHands container)
+            base = self.sandbox_dir_base or os.path.expanduser('~/.openhands/sandboxes')
+            sandbox_base = os.path.join(base, container_name)
+
+            # Host path (for bind mounts - Docker interprets these as host paths)
+            base_host = (
+                self.sandbox_dir_base_host
+                or '/var/lib/cali-openhands/state/sandboxes'
+            )
+            sandbox_base_host = os.path.join(base_host, container_name)
+
+            # Create subdirectories for rootless docker (using container path)
+            socket_dir = os.path.join(sandbox_base, _DOCKERD_SOCKET_SUBDIR)
+            user_home_dir = os.path.join(sandbox_base, _DOCKERD_USER_HOME_SUBDIR)
+
+            os.makedirs(socket_dir, exist_ok=True)
+            os.chmod(socket_dir, 0o755)
+            os.makedirs(user_home_dir, exist_ok=True)
+            os.chmod(user_home_dir, 0o755)
+
+            # Mount the socket directory into the sandbox (using host path)
+            socket_dir_host = os.path.join(sandbox_base_host, _DOCKERD_SOCKET_SUBDIR)
+            volumes[socket_dir_host] = {
+                'bind': '/var/run/docker',
+                'mode': 'rw',
+            }
+
+            # Add label for the oh-rootless-docker-manager daemon on the host
+            # The daemon derives the sandbox directory from its configured base + container name
+            labels[_OH_ROOTLESS_DOCKER_LABEL] = 'true'
+
+            # Set DOCKER_HOST so docker CLI inside sandbox uses the rootless socket
+            env_vars['DOCKER_HOST'] = 'unix:///var/run/docker/docker.sock'
+
+            _logger.info(
+                f'Rootless Docker enabled for sandbox {container_name}: '
+                f'container_path={sandbox_base}, host_path={sandbox_base_host}'
+            )
+
         # Determine network mode
         network_mode = 'host' if self.use_host_network else None
 
@@ -525,6 +622,14 @@ class DockerSandboxService(SandboxService):
                 return False
             container = self.docker_client.containers.get(sandbox_id)
 
+            # Derive sandbox base dir from configured base + container name
+            # (same logic as the host daemon uses)
+            sandbox_base = (
+                os.path.join(self.sandbox_dir_base, sandbox_id)
+                if self.rootless_docker_enabled
+                else None
+            )
+
             # Stop the container if it's running
             if container.status in ['running', 'paused']:
                 container.stop(timeout=10)
@@ -540,6 +645,28 @@ class DockerSandboxService(SandboxService):
             except (NotFound, APIError):
                 # Volume might not exist or already removed
                 pass
+
+            # Remove the rootless docker subdirectories if they exist
+            # The oh-rootless-docker-manager daemon cleans up the socket and user home
+            # contents when the container stops, but we need to remove the directories.
+            # We only delete our subdirectories, not sandbox_base itself - that's left
+            # to auto-workspace-dir (when both features are merged) or manual cleanup.
+            if sandbox_base:
+                for subdir in (_DOCKERD_SOCKET_SUBDIR, _DOCKERD_USER_HOME_SUBDIR):
+                    subdir_path = os.path.join(sandbox_base, subdir)
+                    if os.path.exists(subdir_path):
+                        shutil.rmtree(subdir_path, ignore_errors=True)
+                        _logger.info(
+                            f'Deleted {subdir}/ for sandbox {sandbox_id}'
+                        )
+                # Try to remove parent if now empty (fails silently if not empty)
+                try:
+                    os.rmdir(sandbox_base)
+                    _logger.info(
+                        f'Deleted empty sandbox directory for {sandbox_id}: {sandbox_base}'
+                    )
+                except OSError:
+                    pass  # Directory not empty or doesn't exist
 
             return True
         except (NotFound, APIError):
@@ -647,6 +774,35 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Configure via SANDBOX_KVM_ENABLED environment variable.'
         ),
     )
+    rootless_docker_enabled: bool = Field(
+        default_factory=_get_rootless_docker_enabled_default,
+        description=(
+            'Whether to enable rootless Docker per sandbox. When enabled, each sandbox '
+            'gets its own isolated Docker daemon running as a dedicated unprivileged user. '
+            'This requires the oh-rootless-docker-manager daemon to be running on the host. '
+            'More secure than Docker socket passthrough and more stable than sysbox. '
+            'Configure via SANDBOX_ROOTLESS_DOCKER_ENABLED environment variable.'
+        ),
+    )
+    sandbox_dir_base: str = Field(
+        default_factory=_get_sandbox_dir_base_default,
+        description=(
+            'Base directory for per-sandbox directories (container path). Each sandbox '
+            'gets a directory at {base}/{container_name}/ containing subdirectories for '
+            'Docker socket, user home, and optionally workspace data. This is the path '
+            'as seen from inside the OpenHands container. '
+            'Configure via SANDBOX_DIR_BASE environment variable.'
+        ),
+    )
+    sandbox_dir_base_host: str = Field(
+        default_factory=_get_sandbox_dir_base_host_default,
+        description=(
+            'Base directory for per-sandbox directories (host path). When creating '
+            'sandbox containers, bind mount paths must be HOST paths. This setting '
+            'specifies the host path that corresponds to SANDBOX_DIR_BASE. '
+            'Configure via SANDBOX_DIR_BASE_HOST environment variable.'
+        ),
+    )
 
     async def inject(
         self, state: InjectorState, request: Request | None = None
@@ -682,4 +838,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 startup_grace_seconds=self.startup_grace_seconds,
                 use_host_network=self.use_host_network,
                 kvm_enabled=self.kvm_enabled,
+                rootless_docker_enabled=self.rootless_docker_enabled,
+                sandbox_dir_base=self.sandbox_dir_base,
+                sandbox_dir_base_host=self.sandbox_dir_base_host,
             )
