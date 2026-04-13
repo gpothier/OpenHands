@@ -536,9 +536,14 @@ class DockerSandboxService(SandboxService):
             workspace_dir = os.path.join(sandbox_base, _WORKSPACE_SUBDIR)
             workspace_dir_host = os.path.join(sandbox_base_host, _WORKSPACE_SUBDIR)
 
-            # Create workspace directory with mode 0755
-            # The oh-rootless-docker-manager will grant access to the sandbox user via ACL
+            # UID 10001 is the standard container user (openhands) that needs write access
+            container_uid = 10001
+
+            # Create workspace directory owned by container user with mode 0755
+            # This allows the container to write files, and the oh-rootless-docker-manager
+            # will grant the sandbox user ACL access for Docker volume mounts
             os.makedirs(workspace_dir, exist_ok=True)
+            os.chown(workspace_dir, container_uid, container_uid)
             os.chmod(workspace_dir, 0o755)
 
             # Pre-create the working_dir subdirectory (e.g., /workspace/project)
@@ -547,6 +552,7 @@ class DockerSandboxService(SandboxService):
             working_dir_basename = os.path.basename(sandbox_spec.working_dir)
             project_dir = os.path.join(workspace_dir, working_dir_basename)
             os.makedirs(project_dir, exist_ok=True)
+            os.chown(project_dir, container_uid, container_uid)
             os.chmod(project_dir, 0o755)
 
             # Mount workspace at the parent of working_dir (e.g., /workspace)
