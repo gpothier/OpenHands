@@ -50,6 +50,10 @@ _OH_ROOTLESS_DOCKER_LABEL = 'openhands.rootless-docker'
 # Subdirectory names within the per-sandbox base directory
 _DOCKERD_SOCKET_SUBDIR = 'dockerd-socket'
 _DOCKERD_USER_HOME_SUBDIR = 'dockerd-user-home'
+_WORKSPACE_SUBDIR = 'workspace'
+
+# Label to track the workspace directory for cleanup
+_OH_WORKSPACE_DIR_LABEL = 'openhands.workspace-dir'
 
 
 def _get_use_host_network_default() -> bool:
@@ -106,6 +110,18 @@ def _get_sandbox_dir_base_host_default() -> str:
     )
 
 
+def _get_auto_workspace_dir_default() -> bool:
+    """Get the default value for auto_workspace_dir from environment variables.
+
+    When enabled, each sandbox gets a unique workspace directory on the host
+    that is mounted at /workspace in the sandbox container. This persists
+    workspace data across sandbox restarts and enables rootless Docker volume
+    mounts to work correctly.
+    """
+    value = os.getenv('SANDBOX_AUTO_WORKSPACE_DIR', '')
+    return value.lower() in ('true', '1', 'yes')
+
+
 class VolumeMount(BaseModel):
     """Mounted volume within the container."""
 
@@ -153,6 +169,7 @@ class DockerSandboxService(SandboxService):
     rootless_docker_enabled: bool = False
     sandbox_dir_base: str | None = None
     sandbox_dir_base_host: str | None = None
+    auto_workspace_dir: bool = False
 
     def _find_unused_port(self) -> int:
         """Find an unused port on the host machine."""
@@ -490,13 +507,16 @@ class DockerSandboxService(SandboxService):
         # Startup commands to run inside the container after it starts
         startup_commands: list[str] = []
 
-        # Rootless Docker per sandbox setup
-        # Creates isolated Docker daemon for each sandbox via oh-rootless-docker-manager
+        # Per-sandbox directory setup (shared by rootless_docker and auto_workspace_dir)
         # Directory structure:
         #   {sandbox_dir_base}/{container_name}/
-        #   ├── dockerd-socket/    ← mounted into sandbox at /var/run/docker
+        #   ├── workspace/         ← workspace data (if auto_workspace_dir enabled)
+        #   ├── dockerd-socket/    ← rootless Docker socket (if rootless_docker_enabled)
         #   └── dockerd-user-home/ ← home directory for the sandbox user
-        if self.rootless_docker_enabled:
+        sandbox_base: str | None = None
+        sandbox_base_host: str | None = None
+
+        if self.rootless_docker_enabled or self.auto_workspace_dir:
             # Container path (for creating directories from within OpenHands container)
             base = self.sandbox_dir_base or os.path.expanduser('~/.openhands/sandboxes')
             sandbox_base = os.path.join(base, container_name)
@@ -507,6 +527,48 @@ class DockerSandboxService(SandboxService):
             )
             sandbox_base_host = os.path.join(base_host, container_name)
 
+        # Auto workspace directory setup
+        # Creates a unique workspace directory on the host per sandbox and mounts it.
+        # This enables:
+        # - Workspace data persistence across sandbox restarts
+        # - Rootless Docker volume mounts to work (dockerd can access /workspace)
+        if self.auto_workspace_dir and sandbox_base and sandbox_base_host:
+            workspace_dir = os.path.join(sandbox_base, _WORKSPACE_SUBDIR)
+            workspace_dir_host = os.path.join(sandbox_base_host, _WORKSPACE_SUBDIR)
+
+            # Create workspace directory with mode 0755
+            # The oh-rootless-docker-manager will grant access to the sandbox user via ACL
+            os.makedirs(workspace_dir, exist_ok=True)
+            os.chmod(workspace_dir, 0o755)
+
+            # Pre-create the working_dir subdirectory (e.g., /workspace/project)
+            # This prevents Docker from creating it as root, which would make it
+            # unwritable by the container user (UID 10001)
+            working_dir_basename = os.path.basename(sandbox_spec.working_dir)
+            project_dir = os.path.join(workspace_dir, working_dir_basename)
+            os.makedirs(project_dir, exist_ok=True)
+            os.chmod(project_dir, 0o755)
+
+            # Mount workspace at the parent of working_dir (e.g., /workspace)
+            # This allows sibling directories like /workspace/conversations and
+            # /workspace/bash_events to also be persisted
+            workspace_mount_point = os.path.dirname(sandbox_spec.working_dir)
+            volumes[workspace_dir_host] = {
+                'bind': workspace_mount_point,
+                'mode': 'rw',
+            }
+
+            # Add label for cleanup tracking
+            labels[_OH_WORKSPACE_DIR_LABEL] = workspace_dir
+
+            _logger.info(
+                f'Auto workspace directory for sandbox {container_name}: '
+                f'{workspace_dir_host} -> {workspace_mount_point}'
+            )
+
+        # Rootless Docker per sandbox setup
+        # Creates isolated Docker daemon for each sandbox via oh-rootless-docker-manager
+        if self.rootless_docker_enabled and sandbox_base and sandbox_base_host:
             # Create subdirectories for rootless docker (using container path)
             socket_dir = os.path.join(sandbox_base, _DOCKERD_SOCKET_SUBDIR)
             user_home_dir = os.path.join(sandbox_base, _DOCKERD_USER_HOME_SUBDIR)
@@ -636,13 +698,49 @@ class DockerSandboxService(SandboxService):
             container = self.docker_client.containers.get(sandbox_id)
 
             # Derive sandbox base dir from configured base + container name
-            # (same logic as the host daemon uses)
             sandbox_base: str | None = None
-            if self.rootless_docker_enabled:
+            if self.rootless_docker_enabled or self.auto_workspace_dir:
                 base = self.sandbox_dir_base or os.path.expanduser(
                     '~/.openhands/sandboxes'
                 )
                 sandbox_base = os.path.join(base, sandbox_id)
+
+            # Get workspace dir from label for in-container cleanup
+            workspace_label = container.labels.get(_OH_WORKSPACE_DIR_LABEL)
+
+            # If workspace exists and container is running, clean up contents from inside
+            # the container as root. Files created by the container user (UID 10001)
+            # may not be deletable from the host due to permission issues.
+            if workspace_label and container.status == 'running':
+                # Find the mount destination for workspace inside the container
+                mount_dest = next(
+                    (
+                        m.get('Destination')
+                        for m in container.attrs.get('Mounts', [])
+                        if m.get('Source') == workspace_label
+                    ),
+                    None,
+                )
+                if mount_dest:
+                    try:
+                        exit_code, output = container.exec_run(
+                            ['find', mount_dest, '-mindepth', '1', '-depth', '-delete'],
+                            user='root',
+                        )
+                        if exit_code != 0:
+                            output_str = (
+                                output.decode()
+                                if isinstance(output, bytes)
+                                else str(output)
+                            )
+                            _logger.warning(
+                                f'In-container workspace cleanup exited {exit_code} '
+                                f'for {sandbox_id}: {output_str}'
+                            )
+                    except Exception as exc:
+                        _logger.debug(
+                            f'In-container workspace cleanup failed for {sandbox_id}: {exc}'
+                        )
 
             # Stop the container if it's running
             if container.status in ['running', 'paused']:
@@ -660,25 +758,13 @@ class DockerSandboxService(SandboxService):
                 # Volume might not exist or already removed
                 pass
 
-            # Remove the rootless docker subdirectories if they exist
-            # The oh-rootless-docker-manager daemon cleans up the socket and user home
-            # contents when the container stops, but we need to remove the directories.
-            # We only delete our subdirectories, not sandbox_base itself - that's left
-            # to auto-workspace-dir (when both features are merged) or manual cleanup.
-            if sandbox_base:
-                for subdir in (_DOCKERD_SOCKET_SUBDIR, _DOCKERD_USER_HOME_SUBDIR):
-                    subdir_path = os.path.join(sandbox_base, subdir)
-                    if os.path.exists(subdir_path):
-                        shutil.rmtree(subdir_path, ignore_errors=True)
-                        _logger.info(f'Deleted {subdir}/ for sandbox {sandbox_id}')
-                # Try to remove parent if now empty (fails silently if not empty)
-                try:
-                    os.rmdir(sandbox_base)
-                    _logger.info(
-                        f'Deleted empty sandbox directory for {sandbox_id}: {sandbox_base}'
-                    )
-                except OSError:
-                    pass  # Directory not empty or doesn't exist
+            # Remove the entire sandbox directory tree
+            # This includes workspace/, dockerd-socket/, and dockerd-user-home/
+            if sandbox_base and os.path.exists(sandbox_base):
+                shutil.rmtree(sandbox_base, ignore_errors=True)
+                _logger.info(
+                    f'Deleted sandbox directory for {sandbox_id}: {sandbox_base}'
+                )
 
             return True
         except (NotFound, APIError):
@@ -815,6 +901,16 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Configure via SANDBOX_DIR_BASE_HOST environment variable.'
         ),
     )
+    auto_workspace_dir: bool = Field(
+        default_factory=_get_auto_workspace_dir_default,
+        description=(
+            'Automatically create a unique workspace directory on the host per sandbox '
+            'and mount it at /workspace in the container. This enables workspace data '
+            'persistence across sandbox restarts and allows rootless Docker volume mounts '
+            'to work correctly. Required when using rootless_docker_enabled with volume mounts. '
+            'Configure via SANDBOX_AUTO_WORKSPACE_DIR environment variable.'
+        ),
+    )
 
     async def inject(
         self, state: InjectorState, request: Request | None = None
@@ -853,4 +949,5 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 rootless_docker_enabled=self.rootless_docker_enabled,
                 sandbox_dir_base=self.sandbox_dir_base,
                 sandbox_dir_base_host=self.sandbox_dir_base_host,
+                auto_workspace_dir=self.auto_workspace_dir,
             )
