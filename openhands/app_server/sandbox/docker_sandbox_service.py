@@ -89,9 +89,7 @@ def _get_sandbox_dir_base_default() -> str:
     This is the path as seen from inside the OpenHands container.
     For bind mounts to sandbox containers, use SANDBOX_DIR_BASE_HOST.
     """
-    return os.getenv('SANDBOX_DIR_BASE') or os.path.expanduser(
-        '~/.openhands/sandboxes'
-    )
+    return os.getenv('SANDBOX_DIR_BASE') or os.path.expanduser('~/.openhands/sandboxes')
 
 
 def _get_sandbox_dir_base_host_default() -> str:
@@ -103,7 +101,9 @@ def _get_sandbox_dir_base_host_default() -> str:
 
     Default matches the oh-rootless-docker-manager daemon's default.
     """
-    return os.getenv('SANDBOX_DIR_BASE_HOST') or '/var/lib/cali-openhands/state/sandboxes'
+    return (
+        os.getenv('SANDBOX_DIR_BASE_HOST') or '/var/lib/cali-openhands/state/sandboxes'
+    )
 
 
 class VolumeMount(BaseModel):
@@ -487,6 +487,9 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
+        # Startup commands to run inside the container after it starts
+        startup_commands: list[str] = []
+
         # Rootless Docker per sandbox setup
         # Creates isolated Docker daemon for each sandbox via oh-rootless-docker-manager
         # Directory structure:
@@ -500,8 +503,7 @@ class DockerSandboxService(SandboxService):
 
             # Host path (for bind mounts - Docker interprets these as host paths)
             base_host = (
-                self.sandbox_dir_base_host
-                or '/var/lib/cali-openhands/state/sandboxes'
+                self.sandbox_dir_base_host or '/var/lib/cali-openhands/state/sandboxes'
             )
             sandbox_base_host = os.path.join(base_host, container_name)
 
@@ -525,8 +527,10 @@ class DockerSandboxService(SandboxService):
             # The daemon derives the sandbox directory from its configured base + container name
             labels[_OH_ROOTLESS_DOCKER_LABEL] = 'true'
 
-            # Set DOCKER_HOST so docker CLI inside sandbox uses the rootless socket
-            env_vars['DOCKER_HOST'] = 'unix:///var/run/docker/docker.sock'
+            # Create symlink so tools that don't honor DOCKER_HOST still work
+            startup_commands.append(
+                'ln -sf /var/run/docker/docker.sock /var/run/docker.sock'
+            )
 
             _logger.info(
                 f'Rootless Docker enabled for sandbox {container_name}: '
@@ -574,6 +578,15 @@ class DockerSandboxService(SandboxService):
                 # Device passthrough for KVM hardware virtualization
                 devices=devices,
             )
+
+            # Run startup commands inside the container (as root for system-level setup)
+            for cmd in startup_commands:
+                result = container.exec_run(cmd, user='root')
+                if result.exit_code != 0:
+                    _logger.warning(
+                        f'Startup command failed in {container_name}: {cmd!r} '
+                        f'(exit code {result.exit_code}): {result.output.decode()}'
+                    )
 
             sandbox_info = await self._container_to_sandbox_info(container)
             assert sandbox_info is not None
@@ -624,11 +637,12 @@ class DockerSandboxService(SandboxService):
 
             # Derive sandbox base dir from configured base + container name
             # (same logic as the host daemon uses)
-            sandbox_base = (
-                os.path.join(self.sandbox_dir_base, sandbox_id)
-                if self.rootless_docker_enabled
-                else None
-            )
+            sandbox_base: str | None = None
+            if self.rootless_docker_enabled:
+                base = self.sandbox_dir_base or os.path.expanduser(
+                    '~/.openhands/sandboxes'
+                )
+                sandbox_base = os.path.join(base, sandbox_id)
 
             # Stop the container if it's running
             if container.status in ['running', 'paused']:
@@ -656,9 +670,7 @@ class DockerSandboxService(SandboxService):
                     subdir_path = os.path.join(sandbox_base, subdir)
                     if os.path.exists(subdir_path):
                         shutil.rmtree(subdir_path, ignore_errors=True)
-                        _logger.info(
-                            f'Deleted {subdir}/ for sandbox {sandbox_id}'
-                        )
+                        _logger.info(f'Deleted {subdir}/ for sandbox {sandbox_id}')
                 # Try to remove parent if now empty (fails silently if not empty)
                 try:
                     os.rmdir(sandbox_base)
