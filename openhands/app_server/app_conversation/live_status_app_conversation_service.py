@@ -144,6 +144,10 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
     web_url: str | None
     openhands_provider_base_url: str | None
     access_token_hard_timeout: timedelta | None
+    # HTTP URL reachable from inside Docker containers (host.docker.internal).
+    # Used for agent→host calls (MCP, secret lookup) to avoid TLS issues with
+    # self-signed certificates on the external web_url.
+    internal_web_url: str | None = None
     app_mode: str | None = None
     tavily_api_key: str | None = None
 
@@ -311,7 +315,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
 
             # update status
             task.status = AppConversationStartTaskStatus.STARTING_CONVERSATION
-            task.agent_server_url = agent_server_url
+            # Use the frontend-facing URL (proxied when proxy_agent is enabled).
+            task.agent_server_url = self._get_agent_server_frontend_url(sandbox)
             yield task
 
             # Start conversation...
@@ -742,16 +747,31 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         )
 
     def _get_agent_server_url(self, sandbox: SandboxInfo) -> str:
-        """Get agent server url for running sandbox."""
+        """Get agent server URL for backend API calls.
+
+        When the agent proxy is enabled, ExposedUrl.url is the proxied URL
+        intended for the browser, while ExposedUrl.internal_url is the direct
+        container URL.  Backend calls must always use the direct URL; we prefer
+        internal_url and fall back to url so this method is safe whether or not
+        the proxy is active.
+        """
         exposed_urls = sandbox.exposed_urls
         assert exposed_urls is not None
-        agent_server_url = next(
-            exposed_url.url
-            for exposed_url in exposed_urls
-            if exposed_url.name == AGENT_SERVER
-        )
-        agent_server_url = replace_localhost_hostname_for_docker(agent_server_url)
-        return agent_server_url
+        exposed_url = next(eu for eu in exposed_urls if eu.name == AGENT_SERVER)
+        url = exposed_url.internal_url or exposed_url.url
+        return replace_localhost_hostname_for_docker(url)
+
+    def _get_agent_server_frontend_url(self, sandbox: SandboxInfo) -> str:
+        """Get agent server URL to return to the frontend.
+
+        When the agent proxy is enabled this is the proxied URL
+        (e.g. ``https://openhands-host/agent/<sandbox_id>``).  Otherwise it
+        is the same as _get_agent_server_url.
+        """
+        exposed_urls = sandbox.exposed_urls
+        assert exposed_urls is not None
+        exposed_url = next(eu for eu in exposed_urls if eu.name == AGENT_SERVER)
+        return replace_localhost_hostname_for_docker(exposed_url.url)
 
     def _inherit_configuration_from_parent(
         self, request: AppConversationStartRequest, parent_info: AppConversationInfo
@@ -859,7 +879,10 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             secret_name = f'{provider_type.name}_TOKEN'
             description = f'{provider_type.name} authentication token'
 
-            if self.web_url:
+            # Use the internal URL when available so the agent container avoids
+            # TLS issues with self-signed certs on the external web_url.
+            secrets_base = self.internal_web_url or self.web_url
+            if secrets_base:
                 # Create an access token for web-based authentication
                 access_token = self.jwt_service.create_jws_token(
                     payload={
@@ -871,7 +894,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 headers = {'X-Access-Token': access_token}
 
                 secrets[secret_name] = LookupSecret(
-                    url=self.web_url + '/api/v1/webhooks/secrets',
+                    url=secrets_base + '/api/v1/webhooks/secrets',
                     headers=headers,
                     description=description,
                 )
@@ -943,11 +966,14 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             user: User information for API keys
             conversation_id: Conversation ID forwarded to the OpenHands MCP server
         """
-        if not self.web_url:
+        # Prefer the internal (Docker-reachable) URL so the agent container
+        # avoids TLS issues with self-signed certificates on the external URL.
+        mcp_base = self.internal_web_url or self.web_url
+        if not mcp_base:
             return
 
         # Add default OpenHands MCP server
-        mcp_url = f'{self.web_url}/mcp/mcp'
+        mcp_url = f'{mcp_base}/mcp/mcp'
         mcp_servers['default'] = {
             'url': mcp_url,
             'headers': {'X-OpenHands-ServerConversation-ID': str(conversation_id)},
@@ -2024,6 +2050,16 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 if isinstance(sandbox_service, DockerSandboxService):
                     web_url = f'http://host.docker.internal:{sandbox_service.host_port}'
 
+            # When running with Docker, always build an internal URL that agents
+            # inside containers use for callbacks (MCP, secret lookup).  This is
+            # plain HTTP, so TLS certificate problems with the external web_url
+            # (e.g., self-signed certs behind a reverse proxy) do not apply.
+            internal_web_url: str | None = None
+            if isinstance(sandbox_service, DockerSandboxService):
+                internal_web_url = (
+                    f'http://host.docker.internal:{sandbox_service.host_port}'
+                )
+
             # Get app_mode for SaaS mode
             app_mode = None
             try:
@@ -2060,6 +2096,7 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 max_num_conversations_per_sandbox=self.max_num_conversations_per_sandbox,
                 httpx_client=httpx_client,
                 web_url=web_url,
+                internal_web_url=internal_web_url,
                 openhands_provider_base_url=config.openhands_provider_base_url,
                 access_token_hard_timeout=access_token_hard_timeout,
                 app_mode=app_mode,
