@@ -14,6 +14,7 @@ import { GitProviderDropdown } from "./git-provider-dropdown";
 import { GitBranchDropdown } from "./git-branch-dropdown";
 import { GitRepoDropdown } from "./git-repo-dropdown";
 import { useHomeStore } from "#/stores/home-store";
+import { useSelectedSandboxSpec } from "#/context/selected-sandbox-spec-context";
 
 interface RepositorySelectionFormProps {
   onRepoSelection: (repo: GitRepository | null) => void;
@@ -45,6 +46,7 @@ export function RepositorySelectionForm({
     isPending,
     isSuccess,
   } = useCreateConversation();
+  const { selectedSpecId } = useSelectedSandboxSpec();
 
   const isCreatingConversationElsewhere = useIsCreatingConversation();
 
@@ -188,6 +190,12 @@ export function RepositorySelectionForm({
           isLoadingSettings
         }
         onClick={() => {
+          // Debug: log the selected spec ID
+          console.log(
+            "RepositorySelectionForm onClick: passing sandboxSpecId =",
+            selectedSpecId,
+          );
+
           // Persist the repository to recent repositories when launching
           if (selectedRepository) {
             addRecentRepository(selectedRepository);
@@ -200,6 +208,7 @@ export function RepositorySelectionForm({
                 gitProvider: selectedRepository?.git_provider || "github",
                 branch: selectedBranch?.name || "main",
               },
+              sandboxSpecId: selectedSpecId || undefined,
             },
             {
               onSuccess: (data) =>

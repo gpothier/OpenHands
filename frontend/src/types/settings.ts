@@ -87,4 +87,6 @@ export type Settings = {
   git_user_email?: string;
   v1_enabled?: boolean;
   sandbox_grouping_strategy?: SandboxGroupingStrategy;
+  // Default sandbox spec to use when starting new conversations
+  default_sandbox_spec_id?: string | null;
 };

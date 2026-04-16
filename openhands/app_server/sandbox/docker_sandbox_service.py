@@ -501,9 +501,11 @@ class DockerSandboxService(SandboxService):
             _logger.info(f'Starting sandbox {container_name} with host network mode')
 
         # Determine devices to pass through (e.g., /dev/kvm for hardware virtualization)
-        devices = ['/dev/kvm:/dev/kvm:rwm'] if self.kvm_enabled else None
+        # Use the spec's kvm_enabled setting if available, otherwise fall back to service default
+        use_kvm = getattr(sandbox_spec, 'kvm_enabled', False) or self.kvm_enabled
+        devices = ['/dev/kvm:/dev/kvm:rwm'] if use_kvm else None
 
-        if self.kvm_enabled:
+        if use_kvm:
             _logger.info(
                 f'Starting sandbox {container_name} with KVM device passthrough'
             )

@@ -17,6 +17,7 @@ interface CreateConversationVariables {
   parentConversationId?: string;
   agentType?: "default" | "plan";
   plugins?: PluginSpec[];
+  sandboxSpecId?: string; // Sandbox spec for selecting Docker/Firecracker
 }
 
 // Response type for V1 conversations
@@ -37,6 +38,9 @@ export const useCreateConversation = () => {
     mutationFn: async (
       variables: CreateConversationVariables,
     ): Promise<CreateConversationResponse> => {
+      // Debug: log incoming variables
+      console.log("useCreateConversation mutationFn: variables =", variables);
+
       const {
         query,
         repository,
@@ -45,7 +49,14 @@ export const useCreateConversation = () => {
         parentConversationId,
         agentType,
         plugins,
+        sandboxSpecId,
       } = variables;
+
+      // Debug: log extracted sandboxSpecId
+      console.log(
+        "useCreateConversation mutationFn: sandboxSpecId =",
+        sandboxSpecId,
+      );
 
       // Use V1 API - creates a conversation start task
       const startTask = await V1ConversationService.createConversation(
@@ -59,6 +70,9 @@ export const useCreateConversation = () => {
         parentConversationId,
         agentType,
         plugins,
+        undefined, // sandbox_id - not reusing an existing sandbox
+        undefined, // llm_model - use default
+        sandboxSpecId,
       );
 
       // Return a special task ID that the frontend will recognize

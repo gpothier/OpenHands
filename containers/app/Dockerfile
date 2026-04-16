@@ -52,8 +52,31 @@ RUN mkdir -p $FILE_STORE_PATH
 RUN mkdir -p $WORKSPACE_BASE
 
 RUN apt-get update -y \
-    && apt-get install -y curl git ssh sudo \
+    && apt-get install -y curl git ssh sudo iproute2 \
+    # For Firecracker sandbox support:
+    # - e2fsprogs: debugfs for injecting env vars into rootfs
+    # - iptables: NAT/masquerading for VM internet access
+    # - screen: optional debug console access to VMs
+    && apt-get install -y e2fsprogs iptables screen \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Firecracker for VM-based sandboxes (optional runtime)
+ARG FIRECRACKER_VERSION=1.15.1
+ARG TARGETARCH
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "aarch64" ]; then \
+        curl -L -o /tmp/firecracker.tgz \
+            "https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}/firecracker-v${FIRECRACKER_VERSION}-${ARCH}.tgz" && \
+        tar -xzf /tmp/firecracker.tgz -C /tmp && \
+        mv /tmp/release-v${FIRECRACKER_VERSION}-${ARCH}/firecracker-v${FIRECRACKER_VERSION}-${ARCH} /usr/local/bin/firecracker && \
+        mv /tmp/release-v${FIRECRACKER_VERSION}-${ARCH}/jailer-v${FIRECRACKER_VERSION}-${ARCH} /usr/local/bin/jailer && \
+        chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer && \
+        rm -rf /tmp/firecracker.tgz /tmp/release-v${FIRECRACKER_VERSION}-${ARCH}; \
+    fi
+
+# Create directory for Firecracker resources
+RUN mkdir -p /var/lib/firecracker /tmp/firecracker && \
+    chmod 755 /var/lib/firecracker /tmp/firecracker
 
 # Default is 1000, but OSX is often 501
 RUN sed -i 's/^UID_MIN.*/UID_MIN 499/' /etc/login.defs

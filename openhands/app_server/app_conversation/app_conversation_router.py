@@ -356,6 +356,10 @@ async def start_app_conversation(
     set_db_session_keep_open(request.state, True)
     set_httpx_client_keep_open(request.state, True)
 
+    logger.info(
+        f'start_app_conversation called with sandbox_spec_id={start_request.sandbox_spec_id}'
+    )
+
     try:
         """Start an app conversation start task and return it."""
         async_iter = app_conversation_service.start_app_conversation(start_request)

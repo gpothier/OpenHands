@@ -65,7 +65,13 @@ from openhands.app_server.event_callback.set_title_callback_processor import (
 from openhands.app_server.pending_messages.pending_message_service import (
     PendingMessageService,
 )
+from openhands.app_server.sandbox.composite_sandbox_service import (
+    CompositeSandboxService,
+)
 from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxService
+from openhands.app_server.sandbox.firecracker_sandbox_service import (
+    FirecrackerSandboxService,
+)
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     SandboxInfo,
@@ -695,7 +701,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 )
 
                 sandbox = await self.sandbox_service.start_sandbox(
-                    sandbox_id=sandbox_id_str
+                    sandbox_spec_id=task.request.sandbox_spec_id,
+                    sandbox_id=sandbox_id_str,
                 )
             task.sandbox_id = sandbox.id
         else:
@@ -902,8 +909,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 # Use static token for environments without web URL access
                 static_token = await self.user_context.get_latest_token(provider_type)
                 if static_token:
+                    # Pass string directly - StaticSecret wraps it in SecretStr internally.
+                    # Double-wrapping causes SDK validator to fail (.strip() on SecretStr).
+                    # Type ignore: SDK type hint says SecretStr but validator expects str.
                     secrets[secret_name] = StaticSecret(
-                        value=SecretStr(static_token), description=description
+                        value=static_token,  # type: ignore[arg-type]
+                        description=description,
                     )
 
         return secrets
@@ -2050,14 +2061,40 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 if isinstance(sandbox_service, DockerSandboxService):
                     web_url = f'http://host.docker.internal:{sandbox_service.host_port}'
 
-            # When running with Docker, always build an internal URL that agents
-            # inside containers use for callbacks (MCP, secret lookup).  This is
-            # plain HTTP, so TLS certificate problems with the external web_url
-            # (e.g., self-signed certs behind a reverse proxy) do not apply.
+            # Build an internal URL that agents inside sandboxes use for callbacks
+            # (MCP, secret lookup). This is plain HTTP, so TLS certificate problems
+            # with the external web_url (e.g., self-signed certs) do not apply.
             internal_web_url: str | None = None
-            if isinstance(sandbox_service, DockerSandboxService):
+
+            # Extract the underlying services from composite service
+            docker_service: DockerSandboxService | None = None
+            firecracker_service: FirecrackerSandboxService | None = None
+            if isinstance(sandbox_service, CompositeSandboxService):
+                if isinstance(sandbox_service.docker_service, DockerSandboxService):
+                    docker_service = sandbox_service.docker_service
+                if isinstance(
+                    sandbox_service.firecracker_service, FirecrackerSandboxService
+                ):
+                    firecracker_service = sandbox_service.firecracker_service
+            elif isinstance(sandbox_service, DockerSandboxService):
+                docker_service = sandbox_service
+            elif isinstance(sandbox_service, FirecrackerSandboxService):
+                firecracker_service = sandbox_service
+
+            # For composite service with both Docker and Firecracker, prefer the
+            # Firecracker internal URL since Docker can reach host.docker.internal
+            # anyway, but Firecracker needs the TAP IP.
+            if firecracker_service:
+                # Firecracker VMs reach the host via the TAP network gateway IP
+                # (first usable IP in the VM subnet, e.g., 172.16.0.1)
                 internal_web_url = (
-                    f'http://host.docker.internal:{sandbox_service.host_port}'
+                    f'http://{firecracker_service.host_ip}:'
+                    f'{firecracker_service.host_port}'
+                )
+            elif docker_service:
+                # Docker containers reach the host via host.docker.internal
+                internal_web_url = (
+                    f'http://host.docker.internal:{docker_service.host_port}'
                 )
 
             # Get app_mode for SaaS mode

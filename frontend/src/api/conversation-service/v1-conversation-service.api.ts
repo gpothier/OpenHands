@@ -72,7 +72,14 @@ class V1ConversationService {
     plugins?: PluginSpec[],
     sandbox_id?: string,
     llm_model?: string,
+    sandbox_spec_id?: string,
   ): Promise<V1AppConversationStartTask> {
+    // Debug: log sandbox_spec_id parameter
+    console.log(
+      "V1ConversationService.createConversation: sandbox_spec_id =",
+      sandbox_spec_id,
+    );
+
     const body: V1AppConversationStartRequest = {
       selected_repository: selectedRepository,
       git_provider,
@@ -85,7 +92,10 @@ class V1ConversationService {
       plugins: plugins || null,
       sandbox_id: sandbox_id || null,
       llm_model: llm_model || null,
+      sandbox_spec_id: sandbox_spec_id || null,
     };
+
+    console.log("V1ConversationService.createConversation: body =", body);
 
     // suggested_task implies the backend will construct the initial_message
     if (!suggestedTask && initialUserMsg) {

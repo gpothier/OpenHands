@@ -147,6 +147,14 @@ class AppConversationStartRequest(OpenHandsModel):
     """
 
     sandbox_id: str | None = Field(default=None)
+    sandbox_spec_id: str | None = Field(
+        default=None,
+        description=(
+            'The sandbox spec ID to use when creating a new sandbox. '
+            'Allows selecting between Docker containers, Firecracker VMs, etc. '
+            'Ignored if sandbox_id is provided (reusing existing sandbox).'
+        ),
+    )
     conversation_id: UUID | None = Field(default=None)
     initial_message: SendMessageRequest | None = None
     system_message_suffix: str | None = None

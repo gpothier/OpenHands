@@ -12,6 +12,7 @@ from openhands.app_server.sandbox.preset_sandbox_spec_service import (
 )
 from openhands.app_server.sandbox.sandbox_spec_models import (
     SandboxSpecInfo,
+    SandboxType,
 )
 from openhands.app_server.sandbox.sandbox_spec_service import (
     SandboxSpecService,
@@ -33,9 +34,13 @@ def get_docker_client() -> docker.DockerClient:
 
 
 def get_default_sandbox_specs():
+    """Get the default list of sandbox specs for Docker-based sandboxes."""
     return [
         SandboxSpecInfo(
             id=get_agent_server_image(),
+            name='Docker Container',
+            type=SandboxType.DOCKER,
+            description='Standard Docker container sandbox with full development environment',
             command=['--port', '8000'],
             initial_env={
                 'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
@@ -48,6 +53,7 @@ def get_default_sandbox_specs():
                 **get_agent_server_env(),
             },
             working_dir='/workspace/project',
+            kvm_enabled=False,
         )
     ]
 

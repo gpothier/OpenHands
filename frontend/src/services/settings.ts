@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   git_user_email: "openhands@all-hands.dev",
   v1_enabled: true,
   sandbox_grouping_strategy: "NO_GROUPING",
+  default_sandbox_spec_id: null, // null means use the system default
 };
 
 /**

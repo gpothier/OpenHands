@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import { BrandButton } from "../../settings/brand-button";
 import { useCreateConversation } from "#/hooks/mutation/use-create-conversation";
 import { useIsCreatingConversation } from "#/hooks/use-is-creating-conversation";
+import { useSelectedSandboxSpec } from "#/context/selected-sandbox-spec-context";
 
 export function CreateConversationButton() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { selectedSpecId } = useSelectedSandboxSpec();
 
   const {
     mutate: createConversation,
@@ -22,7 +24,9 @@ export function CreateConversationButton() {
 
   const handleCreateConversation = () => {
     createConversation(
-      {},
+      {
+        sandboxSpecId: selectedSpecId || undefined,
+      },
       {
         onSuccess: (data) => navigate(`/conversations/${data.conversation_id}`),
       },

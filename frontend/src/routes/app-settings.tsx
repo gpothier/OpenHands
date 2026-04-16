@@ -26,6 +26,7 @@ import {
 } from "#/types/settings";
 import { ENABLE_SANDBOX_GROUPING } from "#/utils/feature-flags";
 import { createPermissionGuard } from "#/utils/org/permission-guard";
+import { SandboxTypeSelector } from "#/components/features/settings/sandbox-settings/sandbox-type-selector";
 
 export const clientLoader = createPermissionGuard(
   "manage_application_settings",
@@ -67,6 +68,11 @@ function AppSettingsScreen() {
     React.useState(false);
   const [gitUserEmailHasChanged, setGitUserEmailHasChanged] =
     React.useState(false);
+  const [sandboxTypeHasChanged, setSandboxTypeHasChanged] =
+    React.useState(false);
+  const [selectedSandboxSpecId, setSelectedSandboxSpecId] = React.useState<
+    string | null
+  >(null);
 
   const formAction = (formData: FormData) => {
     const languageLabel = formData.get("language-input")?.toString();
@@ -104,6 +110,12 @@ function AppSettingsScreen() {
       formData.get("git-user-email-input")?.toString() ||
       DEFAULT_SETTINGS.git_user_email;
 
+    // Use selected sandbox spec ID or fall back to current setting
+    const defaultSandboxSpecId =
+      selectedSandboxSpecId !== null
+        ? selectedSandboxSpecId
+        : settings?.default_sandbox_spec_id;
+
     saveSettings(
       {
         language,
@@ -115,6 +127,7 @@ function AppSettingsScreen() {
         max_budget_per_task: maxBudgetPerTask,
         git_user_name: gitUserName,
         git_user_email: gitUserEmail,
+        default_sandbox_spec_id: defaultSandboxSpecId,
       },
       {
         onSuccess: () => {
@@ -135,6 +148,8 @@ function AppSettingsScreen() {
           setMaxBudgetPerTaskHasChanged(false);
           setGitUserNameHasChanged(false);
           setGitUserEmailHasChanged(false);
+          setSandboxTypeHasChanged(false);
+          setSelectedSandboxSpecId(null);
         },
       },
     );
@@ -204,6 +219,12 @@ function AppSettingsScreen() {
     setGitUserEmailHasChanged(value !== currentValue);
   };
 
+  const handleSandboxTypeChange = (specId: string | null) => {
+    setSelectedSandboxSpecId(specId);
+    const currentSpecId = settings?.default_sandbox_spec_id ?? null;
+    setSandboxTypeHasChanged(specId !== currentSpecId);
+  };
+
   const formIsClean =
     !languageInputHasChanged &&
     !analyticsSwitchHasChanged &&
@@ -213,7 +234,8 @@ function AppSettingsScreen() {
     !sandboxGroupingStrategyHasChanged &&
     !maxBudgetPerTaskHasChanged &&
     !gitUserNameHasChanged &&
-    !gitUserEmailHasChanged;
+    !gitUserEmailHasChanged &&
+    !sandboxTypeHasChanged;
 
   const shouldBeLoading = !settings || isLoading || isPending;
 
@@ -293,6 +315,24 @@ function AppSettingsScreen() {
               wrapperClassName="w-full max-w-[680px]"
             />
           )}
+
+          <div className="border-t border-t-tertiary pt-6 mt-2">
+            <h3 className="text-lg font-medium mb-2">
+              {t(I18nKey.SETTINGS$SANDBOX_TYPE)}
+            </h3>
+            <p className="text-xs mb-4">
+              {t(I18nKey.SETTINGS$SANDBOX_TYPE_DESCRIPTION)}
+            </p>
+            <SandboxTypeSelector
+              testId="sandbox-type-selector"
+              name="sandbox-type-selector"
+              selectedSpecId={
+                selectedSandboxSpecId ?? settings.default_sandbox_spec_id
+              }
+              onSelectionChange={handleSandboxTypeChange}
+              wrapperClassName="w-full max-w-[680px]"
+            />
+          </div>
 
           {!settings?.v1_enabled && (
             <SettingsInput

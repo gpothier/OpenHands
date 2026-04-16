@@ -51,6 +51,7 @@ export interface V1SendMessageRequest {
 
 export interface V1AppConversationStartRequest {
   sandbox_id?: string | null;
+  sandbox_spec_id?: string | null; // Sandbox spec for selecting sandbox type (Docker/Firecracker)
   initial_message?: V1SendMessageRequest | null;
   processors?: unknown[]; // EventCallbackProcessor - keeping as unknown for now
   llm_model?: string | null;

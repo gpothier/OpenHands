@@ -236,15 +236,35 @@ def config_from_env() -> AppServerConfig:
         config.event_callback = SQLEventCallbackServiceInjector()
 
     if config.sandbox is None:
-        # Legacy fallback
-        if os.getenv('RUNTIME') == 'remote':
+        # OH_SANDBOX_TYPE controls sandbox service selection
+        # Note: This is different from RUNTIME which controls the agent runtime
+        # OH_SANDBOX_TYPE options: docker, composite, remote, process
+        # Note: Use 'composite' for Firecracker support - it allows selecting
+        # between Docker and Firecracker per-conversation. Firecracker config
+        # is read from FIRECRACKER_* env vars by the service itself.
+        sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
+        # Fall back to RUNTIME for backward compatibility
+        if not sandbox_type:
+            sandbox_type = os.getenv('RUNTIME', 'docker').lower()
+
+        if sandbox_type == 'remote':
             config.sandbox = RemoteSandboxServiceInjector(
                 api_key=os.environ['SANDBOX_API_KEY'],
                 api_url=os.environ['SANDBOX_REMOTE_RUNTIME_API_URL'],
             )
-        elif os.getenv('RUNTIME') in ('local', 'process'):
+        elif sandbox_type in ('local', 'process'):
             config.sandbox = ProcessSandboxServiceInjector()
+        elif sandbox_type == 'composite':
+            # Composite mode: supports both Docker and Firecracker sandboxes
+            # Users can select sandbox type per-conversation via UI
+            # Firecracker config is read from FIRECRACKER_* env vars
+            from openhands.app_server.sandbox.composite_sandbox_service import (
+                CompositeSandboxServiceInjector,
+            )
+
+            config.sandbox = CompositeSandboxServiceInjector()
         else:
+            # Default to Docker
             # Support legacy environment variables for Docker sandbox configuration
             docker_sandbox_kwargs: dict = {}
             if os.getenv('SANDBOX_HOST_PORT'):
@@ -300,10 +320,22 @@ def config_from_env() -> AppServerConfig:
             config.sandbox = DockerSandboxServiceInjector(**docker_sandbox_kwargs)
 
     if config.sandbox_spec is None:
-        if os.getenv('RUNTIME') == 'remote':
+        # Use same sandbox_type as above for consistency
+        sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
+        if not sandbox_type:
+            sandbox_type = os.getenv('RUNTIME', 'docker').lower()
+
+        if sandbox_type == 'remote':
             config.sandbox_spec = RemoteSandboxSpecServiceInjector()
-        elif os.getenv('RUNTIME') in ('local', 'process'):
+        elif sandbox_type in ('local', 'process'):
             config.sandbox_spec = ProcessSandboxSpecServiceInjector()
+        elif sandbox_type == 'composite':
+            # Composite mode: return specs for all available sandbox types
+            from openhands.app_server.sandbox.composite_sandbox_spec_service import (
+                CompositeSandboxSpecServiceInjector,
+            )
+
+            config.sandbox_spec = CompositeSandboxSpecServiceInjector()
         else:
             config.sandbox_spec = DockerSandboxSpecServiceInjector()
 

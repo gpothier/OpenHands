@@ -73,6 +73,8 @@ class Settings(BaseModel):
     sandbox_grouping_strategy: SandboxGroupingStrategy = (
         SandboxGroupingStrategy.NO_GROUPING
     )
+    # Default sandbox spec ID for new conversations (e.g., "firecracker::image:tag")
+    default_sandbox_spec_id: str | None = None
 
     model_config = ConfigDict(
         validate_assignment=True,
