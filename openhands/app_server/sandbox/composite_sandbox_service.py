@@ -247,6 +247,8 @@ class CompositeSandboxServiceInjector(SandboxServiceInjector):
     async def inject(
         self, state: InjectorState, request: Request | None = None
     ) -> AsyncGenerator[SandboxService, None]:
+        import os
+
         from openhands.app_server.config import get_sandbox_spec_service
         from openhands.app_server.sandbox.docker_sandbox_service import (
             DockerSandboxServiceInjector,
@@ -255,27 +257,27 @@ class CompositeSandboxServiceInjector(SandboxServiceInjector):
         # Always create Docker service
         docker_injector = DockerSandboxServiceInjector()
 
-        # Try to create Firecracker service if available
+        # Try to create Firecracker service if daemon socket is available
         firecracker_service: SandboxService | None = None
-        try:
-            # Check if Firecracker prerequisites are available
-            import os
+        daemon_socket = os.environ.get(
+            'OH_FIRECRACKER_MANAGER_SOCKET',
+            '/var/run/oh-firecracker-manager/oh-firecracker.sock',
+        )
+        if os.path.exists(daemon_socket):
+            try:
+                from openhands.app_server.sandbox.firecracker_sandbox_service import (
+                    FirecrackerSandboxServiceInjector,
+                )
 
-            from openhands.app_server.sandbox.firecracker_sandbox_service import (
-                FirecrackerSandboxServiceInjector,
-            )
-
-            if os.path.exists('/dev/kvm') and os.path.exists(
-                '/var/lib/firecracker/vmlinux'
-            ):
                 fc_injector = FirecrackerSandboxServiceInjector()
                 async for fc_service in fc_injector.inject(state, request):
                     firecracker_service = fc_service
                     break
-        except ImportError:
-            _logger.debug('Firecracker service not available')
-        except Exception as e:
-            _logger.warning(f'Failed to initialize Firecracker service: {e}')
+                _logger.info('Firecracker service initialized via daemon')
+            except ImportError:
+                _logger.debug('Firecracker service module not available')
+            except Exception as e:
+                _logger.warning(f'Failed to initialize Firecracker service: {e}')
 
         async with get_sandbox_spec_service(state) as sandbox_spec_service:
             async for docker_service in docker_injector.inject(state, request):

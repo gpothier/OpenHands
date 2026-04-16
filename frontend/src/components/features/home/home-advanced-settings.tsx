@@ -9,7 +9,7 @@ import ChevronDownIcon from "#/icons/chevron-down-small.svg?react";
 /**
  * Advanced settings panel for the home page.
  * Initially collapsed, contains settings like sandbox type selection.
- * Only shown when there are settings to display (e.g., multiple sandbox types).
+ * Always shown so users know what sandbox type will be used.
  */
 export function HomeAdvancedSettings() {
   const { t } = useTranslation();
@@ -17,10 +17,8 @@ export function HomeAdvancedSettings() {
   const { data: specsPage } = useSandboxSpecs();
   const { selectedSpecId, setSelectedSpecId } = useSelectedSandboxSpec();
 
-  // Only show if there are advanced settings to display
-  const hasMultipleSandboxTypes = (specsPage?.items?.length ?? 0) > 1;
-
-  if (!hasMultipleSandboxTypes) {
+  // Don't render until we have the specs data
+  if (!specsPage?.items) {
     return null;
   }
 

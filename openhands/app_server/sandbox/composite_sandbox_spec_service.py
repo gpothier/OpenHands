@@ -125,29 +125,20 @@ class CompositeSandboxSpecServiceInjector(SandboxSpecServiceInjector, OpenHandsM
         # Check Firecracker availability (cached after first check)
         global _firecracker_available
         if _firecracker_available is None and self.check_firecracker:
-            # Check for KVM device
-            kvm_available = os.path.exists('/dev/kvm') and os.access(
-                '/dev/kvm', os.R_OK | os.W_OK
+            # For daemon-based approach, check if the daemon socket is available
+            # The daemon manages kernel/rootfs building on the host
+            daemon_socket = os.environ.get(
+                'OH_FIRECRACKER_MANAGER_SOCKET',
+                '/var/run/oh-firecracker-manager/oh-firecracker.sock',
             )
-            # Check for kernel
-            kernel_available = os.path.exists('/var/lib/firecracker/vmlinux')
-            # Check for rootfs (mounted at /var/lib/firecracker/rootfs.ext4)
-            rootfs_available = os.path.exists('/var/lib/firecracker/rootfs.ext4')
+            daemon_available = os.path.exists(daemon_socket)
 
-            _firecracker_available = (
-                kvm_available and kernel_available and rootfs_available
-            )
+            _firecracker_available = daemon_available
 
             _logger.info(
-                f'Firecracker availability check (one-time): KVM={kvm_available}, '
-                f'Kernel={kernel_available}, Rootfs={rootfs_available}, '
-                f'Available={_firecracker_available}'
+                f'Firecracker availability check (one-time): '
+                f'Daemon socket={daemon_socket}, Available={_firecracker_available}'
             )
-            if kvm_available and not _firecracker_available:
-                _logger.warning(
-                    'KVM available but Firecracker not fully configured. '
-                    f'Kernel: {kernel_available}, Rootfs: {rootfs_available}'
-                )
 
         firecracker_available = bool(
             _firecracker_available if self.check_firecracker else False

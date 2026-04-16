@@ -69,9 +69,6 @@ from openhands.app_server.sandbox.composite_sandbox_service import (
     CompositeSandboxService,
 )
 from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxService
-from openhands.app_server.sandbox.firecracker_sandbox_service import (
-    FirecrackerSandboxService,
-)
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     SandboxInfo,
@@ -2064,34 +2061,20 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # Build an internal URL that agents inside sandboxes use for callbacks
             # (MCP, secret lookup). This is plain HTTP, so TLS certificate problems
             # with the external web_url (e.g., self-signed certs) do not apply.
+            # Note: Firecracker VMs get their own host_ip per-VM which is handled
+            # by the daemon when setting up the webhook URL, so we only set this
+            # for Docker sandboxes.
             internal_web_url: str | None = None
 
-            # Extract the underlying services from composite service
+            # Extract the Docker service from composite or direct service
             docker_service: DockerSandboxService | None = None
-            firecracker_service: FirecrackerSandboxService | None = None
             if isinstance(sandbox_service, CompositeSandboxService):
                 if isinstance(sandbox_service.docker_service, DockerSandboxService):
                     docker_service = sandbox_service.docker_service
-                if isinstance(
-                    sandbox_service.firecracker_service, FirecrackerSandboxService
-                ):
-                    firecracker_service = sandbox_service.firecracker_service
             elif isinstance(sandbox_service, DockerSandboxService):
                 docker_service = sandbox_service
-            elif isinstance(sandbox_service, FirecrackerSandboxService):
-                firecracker_service = sandbox_service
 
-            # For composite service with both Docker and Firecracker, prefer the
-            # Firecracker internal URL since Docker can reach host.docker.internal
-            # anyway, but Firecracker needs the TAP IP.
-            if firecracker_service:
-                # Firecracker VMs reach the host via the TAP network gateway IP
-                # (first usable IP in the VM subnet, e.g., 172.16.0.1)
-                internal_web_url = (
-                    f'http://{firecracker_service.host_ip}:'
-                    f'{firecracker_service.host_port}'
-                )
-            elif docker_service:
+            if docker_service:
                 # Docker containers reach the host via host.docker.internal
                 internal_web_url = (
                     f'http://host.docker.internal:{docker_service.host_port}'
