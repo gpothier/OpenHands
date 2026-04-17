@@ -377,6 +377,23 @@ class FirecrackerSandboxService(SandboxService):
                 return vm.to_sandbox_info(self.web_url)
         return None
 
+    def get_sandbox_host_ip(self, sandbox_id: str) -> str | None:
+        """Get the host/gateway IP for a specific sandbox.
+
+        Each Firecracker VM has its own TAP interface with a unique gateway IP.
+        This method queries the daemon to get the specific host_ip for a sandbox.
+
+        Args:
+            sandbox_id: The sandbox/VM ID
+
+        Returns:
+            The host IP that the VM should use to reach the host, or None
+        """
+        vm_data = self._client.get_vm(sandbox_id)
+        if not vm_data:
+            return None
+        return vm_data.get('host_ip')
+
     async def search_sandboxes(
         self, page_id: str | None = None, limit: int = 100
     ) -> SandboxPage:

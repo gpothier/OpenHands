@@ -78,6 +78,7 @@ from openhands.app_server.sandbox.sandbox_models import (
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import SandboxService
+from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
 from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
 from openhands.app_server.services.injector import InjectorState
 from openhands.app_server.services.jwt_service import JwtService
@@ -967,8 +968,58 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
 
         return user_search_key or service_tavily_key
 
+    async def _get_internal_url_for_sandbox(self, sandbox: SandboxInfo) -> str | None:
+        """Get the internal URL for callbacks based on sandbox type.
+
+        This handles the case where CompositeSandboxService is used and the
+        sandbox could be either Docker or Firecracker. Each sandbox type needs
+        a different internal URL:
+        - Docker: http://host.docker.internal:{port}
+        - Firecracker: http://{per_vm_gateway_ip}:{port}
+
+        For Firecracker, each VM has its own /30 subnet with a unique gateway IP
+        (the host's TAP interface IP). We query the daemon to get the specific
+        host_ip for this sandbox.
+
+        Args:
+            sandbox: The sandbox info to get the URL for
+
+        Returns:
+            The internal URL appropriate for the sandbox type, or None
+        """
+        # Look up the sandbox spec to determine the type
+        sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
+            sandbox.sandbox_spec_id
+        )
+
+        if sandbox_spec and sandbox_spec.type == SandboxType.FIRECRACKER:
+            # Firecracker sandbox - get the per-VM gateway IP from the daemon
+            fc_service: FirecrackerSandboxService | None = None
+            if isinstance(self.sandbox_service, CompositeSandboxService):
+                if isinstance(
+                    self.sandbox_service.firecracker_service, FirecrackerSandboxService
+                ):
+                    fc_service = self.sandbox_service.firecracker_service
+            elif isinstance(self.sandbox_service, FirecrackerSandboxService):
+                fc_service = self.sandbox_service
+
+            if fc_service:
+                # Query the daemon for this specific VM's host/gateway IP
+                host_ip = fc_service.get_sandbox_host_ip(sandbox.id)
+                if host_ip:
+                    return f'http://{host_ip}:{fc_service.host_port}'
+                # Fallback to computed host_ip if daemon doesn't return it
+                return f'http://{fc_service.host_ip}:{fc_service.host_port}'
+
+        # For Docker or fallback, use the pre-computed internal_web_url
+        return self.internal_web_url
+
     async def _add_system_mcp_servers(
-        self, mcp_servers: dict[str, Any], user: UserInfo, conversation_id: UUID
+        self,
+        mcp_servers: dict[str, Any],
+        user: UserInfo,
+        conversation_id: UUID,
+        sandbox: SandboxInfo,
     ) -> None:
         """Add system-generated MCP servers (default OpenHands server and Tavily).
 
@@ -976,10 +1027,11 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             mcp_servers: Dictionary to add servers to
             user: User information for API keys
             conversation_id: Conversation ID forwarded to the OpenHands MCP server
+            sandbox: Sandbox info to determine the correct internal URL
         """
-        # Prefer the internal (Docker-reachable) URL so the agent container
-        # avoids TLS issues with self-signed certificates on the external URL.
-        mcp_base = self.internal_web_url or self.web_url
+        # Get the internal URL appropriate for this sandbox type
+        # This ensures Firecracker VMs use the TAP network IP, not host.docker.internal
+        mcp_base = await self._get_internal_url_for_sandbox(sandbox) or self.web_url
         if not mcp_base:
             return
 
@@ -1125,7 +1177,11 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             )
 
     async def _configure_llm_and_mcp(
-        self, user: UserInfo, llm_model: str | None, conversation_id: UUID
+        self,
+        user: UserInfo,
+        llm_model: str | None,
+        conversation_id: UUID,
+        sandbox: SandboxInfo,
     ) -> tuple[LLM, dict]:
         """Configure LLM and MCP (Model Context Protocol) settings.
 
@@ -1133,6 +1189,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             user: User information containing LLM preferences
             llm_model: Optional specific model to use, falls back to user default
             conversation_id: Conversation ID forwarded to the OpenHands MCP server
+            sandbox: Sandbox info to determine the correct internal URL for MCP
 
         Returns:
             Tuple of (configured LLM instance, MCP config dictionary)
@@ -1144,7 +1201,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         mcp_servers: dict[str, Any] = {}
 
         # Add system-generated servers (default + tavily)
-        await self._add_system_mcp_servers(mcp_servers, user, conversation_id)
+        # Pass sandbox so we can use the correct internal URL for the sandbox type
+        await self._add_system_mcp_servers(mcp_servers, user, conversation_id, sandbox)
 
         # Merge custom servers from user settings
         self._merge_custom_mcp_config(mcp_servers, user)
@@ -1535,8 +1593,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         secrets = await self._setup_secrets_for_git_providers(user)
 
         # Configure LLM and MCP
+        # Pass sandbox so MCP URL can be customized per sandbox type
         llm, mcp_config = await self._configure_llm_and_mcp(
-            user, llm_model, conversation_id
+            user, llm_model, conversation_id, sandbox
         )
 
         # Create agent with context
