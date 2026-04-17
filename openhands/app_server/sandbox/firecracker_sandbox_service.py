@@ -31,6 +31,7 @@ import socket
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from openhands.agent_server.utils import utc_now
 from openhands.app_server.errors import SandboxError
@@ -304,10 +305,17 @@ class FirecrackerVM:
             ]
 
             # Add additional ports from the sandbox spec
+            # For URL templates, use web_url's hostname (external access) or guest_ip (local)
+            external_host = self.guest_ip
+            if web_url:
+                parsed = urlparse(web_url)
+                if parsed.hostname:
+                    external_host = parsed.hostname
+
             for exposed_port in self.exposed_ports:
                 if exposed_port.url_template:
                     url = exposed_port.url_template.format(
-                        host=self.guest_ip, port=exposed_port.port
+                        host=external_host, port=exposed_port.port
                     )
                 else:
                     url = f'http://{self.guest_ip}:{exposed_port.port}'
