@@ -254,8 +254,24 @@ class CompositeSandboxServiceInjector(SandboxServiceInjector):
             DockerSandboxServiceInjector,
         )
 
+        # Build Docker injector kwargs from environment variables
+        # (same logic as in config.py for direct Docker sandbox)
+        docker_kwargs: dict = {}
+        if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
+            docker_kwargs['startup_grace_seconds'] = int(
+                os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
+            )
+        if os.getenv('SANDBOX_PROXY_VSCODE'):
+            docker_kwargs['proxy_vscode'] = os.environ[
+                'SANDBOX_PROXY_VSCODE'
+            ].lower() in ('1', 'true', 'yes', 'on')
+        if os.getenv('SANDBOX_PROXY_AGENT'):
+            docker_kwargs['proxy_agent'] = os.environ[
+                'SANDBOX_PROXY_AGENT'
+            ].lower() in ('1', 'true', 'yes', 'on')
+
         # Always create Docker service
-        docker_injector = DockerSandboxServiceInjector()
+        docker_injector = DockerSandboxServiceInjector(**docker_kwargs)
 
         # Try to create Firecracker service if daemon socket is available
         firecracker_service: SandboxService | None = None
