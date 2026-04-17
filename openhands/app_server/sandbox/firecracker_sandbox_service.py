@@ -81,7 +81,7 @@ DEFAULT_DAEMON_SOCKET = '/var/run/oh-firecracker-manager/oh-firecracker.sock'
 DEFAULT_VM_SUBNET = '172.16.0.0/30'
 
 # Environment variable names for agent-server configuration
-SESSION_API_KEY_VARIABLE = 'SESSION_API_KEY'
+SESSION_API_KEY_VARIABLE = 'OH_SESSION_API_KEY'
 WEBHOOK_CALLBACK_VARIABLE = 'WEBHOOK_CALLBACK_URL'
 
 # Default exposed ports for Firecracker sandboxes (beyond AGENT_SERVER and VSCODE)
