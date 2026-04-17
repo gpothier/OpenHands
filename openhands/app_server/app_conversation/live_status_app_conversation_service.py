@@ -77,7 +77,10 @@ from openhands.app_server.sandbox.sandbox_models import (
     SandboxInfo,
     SandboxStatus,
 )
-from openhands.app_server.sandbox.sandbox_service import SandboxService
+from openhands.app_server.sandbox.sandbox_service import (
+    SSH_PUBLIC_KEYS_VARIABLE,
+    SandboxService,
+)
 from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
 from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
 from openhands.app_server.services.injector import InjectorState
@@ -683,6 +686,21 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             # Return empty counts on error - will default to first sandbox
             return {}
 
+    async def _get_extra_env(self) -> dict[str, str]:
+        """Build extra environment variables for sandbox startup.
+
+        Currently includes SSH public keys from user settings.
+        """
+        extra_env: dict[str, str] = {}
+        try:
+            user_info = await self.user_context.get_user_info()
+            if user_info.ssh_public_keys:
+                keys = [k.key for k in user_info.ssh_public_keys]
+                extra_env[SSH_PUBLIC_KEYS_VARIABLE] = '\n'.join(keys)
+        except Exception as e:
+            _logger.warning(f'Failed to get user settings for extra_env: {e}')
+        return extra_env
+
     async def _wait_for_sandbox_start(
         self, task: AppConversationStartTask
     ) -> AsyncGenerator[AppConversationStartTask, None]:
@@ -701,9 +719,13 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     else None
                 )
 
+                # Get extra environment variables (SSH keys, etc.)
+                extra_env = await self._get_extra_env()
+
                 sandbox = await self.sandbox_service.start_sandbox(
                     sandbox_spec_id=task.request.sandbox_spec_id,
                     sandbox_id=sandbox_id_str,
+                    extra_env=extra_env or None,
                 )
             task.sandbox_id = sandbox.id
         else:

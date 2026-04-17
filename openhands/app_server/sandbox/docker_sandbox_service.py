@@ -18,6 +18,7 @@ from openhands.app_server.errors import SandboxError
 from openhands.app_server.sandbox.docker_sandbox_spec_service import get_docker_client
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
+    SSH,
     VSCODE,
     WORKER_1,
     WORKER_2,
@@ -28,6 +29,7 @@ from openhands.app_server.sandbox.sandbox_models import (
 )
 from openhands.app_server.sandbox.sandbox_service import (
     SESSION_API_KEY_VARIABLE,
+    SSH_PUBLIC_KEYS_VARIABLE,
     WEBHOOK_CALLBACK_VARIABLE,
     SandboxService,
     SandboxServiceInjector,
@@ -254,16 +256,20 @@ class DockerSandboxService(SandboxService):
                                     )
                                 )
 
-        if not container.image.tags:
-            _logger.debug(
-                f'Skipping container {container.name!r}: image has no tags (image id: {container.image.id})'
-            )
-            return None
+        # Get sandbox_spec_id from container labels (preferred) or fall back to image tag
+        sandbox_spec_id = container.labels.get('sandbox_spec_id')
+        if sandbox_spec_id is None:
+            if not container.image.tags:
+                _logger.debug(
+                    f'Skipping container {container.name!r}: image has no tags (image id: {container.image.id})'
+                )
+                return None
+            sandbox_spec_id = container.image.tags[0]
 
         return SandboxInfo(
             id=container.name,
             created_by_user_id=None,
-            sandbox_spec_id=container.image.tags[0],
+            sandbox_spec_id=sandbox_spec_id,
             status=status,
             session_api_key=session_api_key,
             exposed_urls=exposed_urls,
@@ -686,6 +692,13 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                     'The port on which the VSCode server runs within the container'
                 ),
                 container_port=8001,
+            ),
+            ExposedPort(
+                name=SSH,
+                description=(
+                    'The port on which the SSH server runs for local VSCode Remote-SSH access'
+                ),
+                container_port=2222,
             ),
             ExposedPort(
                 name=WORKER_1,

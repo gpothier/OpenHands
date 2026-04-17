@@ -287,9 +287,15 @@ class ProcessSandboxService(SandboxService):
         return None
 
     async def start_sandbox(
-        self, sandbox_spec_id: str | None = None, sandbox_id: str | None = None
+        self,
+        sandbox_spec_id: str | None = None,
+        sandbox_id: str | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
+        # Note: extra_env is accepted but not used in process sandbox service
+        # as process sandboxes inherit the parent environment
+
         # Get sandbox spec
         if sandbox_spec_id is None:
             sandbox_spec = await self.sandbox_spec_service.get_default_sandbox_spec()
