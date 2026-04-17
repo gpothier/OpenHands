@@ -168,7 +168,6 @@ class DaemonClient:
         self,
         vm_id: str,
         image: str,
-        session_api_key: str,
         env_vars: dict[str, str] | None = None,
         entrypoint: list[str] | None = None,
         user: str | None = None,
@@ -180,8 +179,7 @@ class DaemonClient:
         Args:
             vm_id: Unique VM identifier
             image: Container image to use for the VM
-            session_api_key: API key for the agent server
-            env_vars: Environment variables to set in the VM
+            env_vars: Environment variables to set in the VM (supports {host_ip} substitution)
             entrypoint: Command to run as the main service (overrides image entrypoint)
             user: User to run the entrypoint as (default: root)
             working_dir: Working directory for the entrypoint
@@ -190,7 +188,6 @@ class DaemonClient:
         body = {
             'vm_id': vm_id,
             'image': image,
-            'session_api_key': session_api_key,
             'env_vars': env_vars or {},
         }
         if entrypoint:
@@ -263,9 +260,10 @@ class FirecrackerVM:
             vm_id=data['vm_id'],
             guest_ip=data.get('guest_ip'),
             host_ip=data.get('host_ip'),
-            agent_server_port=data.get('agent_server_port', 8000),
-            vscode_port=data.get('vscode_port', 8001),
-            session_api_key=data.get('session_api_key'),
+            # agent_server_port and vscode_port are now OpenHands-specific defaults
+            # (the daemon no longer returns them)
+            agent_server_port=8000,
+            vscode_port=8001,
             status=data.get('status', 'unknown'),
             created_at=created_at,
             port_mappings=port_mappings,
@@ -459,18 +457,20 @@ class FirecrackerSandboxService(SandboxService):
         self, session_api_key: str
     ) -> SandboxInfo | None:
         """Get sandbox by session API key."""
-        # Search through all VMs for matching session API key
-        vms = self._client.list_vms()
-        for vm_data in vms:
-            if vm_data.get('session_api_key') == session_api_key:
-                vm = FirecrackerVM.from_daemon_response(vm_data)
-                if vm.vm_id in self._vms:
-                    cached = self._vms[vm.vm_id]
-                    vm.sandbox_spec_id = cached.sandbox_spec_id
-                    vm.working_dir = cached.working_dir
-                    vm.exposed_ports = cached.exposed_ports
-                self._ensure_default_exposed_ports(vm)
-                return vm.to_sandbox_info(self.web_url)
+        # Search through local cache for matching session API key
+        # (session_api_key is stored locally, not in the daemon)
+        for vm_id, cached_vm in self._vms.items():
+            if cached_vm.session_api_key == session_api_key:
+                # Verify VM still exists in daemon
+                vm_data = self._client.get_vm(vm_id)
+                if vm_data:
+                    vm = FirecrackerVM.from_daemon_response(vm_data)
+                    vm.sandbox_spec_id = cached_vm.sandbox_spec_id
+                    vm.session_api_key = cached_vm.session_api_key
+                    vm.working_dir = cached_vm.working_dir
+                    vm.exposed_ports = cached_vm.exposed_ports
+                    self._ensure_default_exposed_ports(vm)
+                    return vm.to_sandbox_info(self.web_url)
         return None
 
     def get_sandbox_host_ip(self, sandbox_id: str) -> str | None:
@@ -598,7 +598,6 @@ class FirecrackerSandboxService(SandboxService):
         response = self._client.create_vm(
             vm_id=vm_id,
             image=self.sdk_image,
-            session_api_key=session_api_key,
             env_vars=env_vars,
             user='openhands',
             working_dir=working_dir,
@@ -607,6 +606,7 @@ class FirecrackerSandboxService(SandboxService):
 
         vm = FirecrackerVM.from_daemon_response(response)
         vm.sandbox_spec_id = sandbox_spec_id
+        # Store session_api_key locally (not returned by daemon)
         vm.session_api_key = session_api_key
         vm.working_dir = working_dir
         vm.exposed_ports = exposed_ports
