@@ -173,6 +173,7 @@ class DaemonClient:
         entrypoint: list[str] | None = None,
         user: str | None = None,
         working_dir: str | None = None,
+        exposed_ports: list[int] | None = None,
     ) -> dict:
         """Create a new VM.
         
@@ -184,6 +185,7 @@ class DaemonClient:
             entrypoint: Command to run as the main service (overrides image entrypoint)
             user: User to run the entrypoint as (default: root)
             working_dir: Working directory for the entrypoint
+            exposed_ports: List of VM ports to expose on the host (returns port_mappings)
         """
         body = {
             'vm_id': vm_id,
@@ -197,6 +199,8 @@ class DaemonClient:
             body['user'] = user
         if working_dir:
             body['working_dir'] = working_dir
+        if exposed_ports:
+            body['exposed_ports'] = exposed_ports
         response = self._send_request('POST', '/vms', body, timeout=1800)
         if response.get('error'):
             raise SandboxError(response['error'])
@@ -239,6 +243,8 @@ class FirecrackerVM:
     created_at: datetime = field(default_factory=utc_now)
     working_dir: str = '/workspace/project'
     exposed_ports: list[ExposedPort] = field(default_factory=list)
+    # Port mappings from daemon: {vm_port: host_port}
+    port_mappings: dict[int, int] = field(default_factory=dict)
 
     @classmethod
     def from_daemon_response(cls, data: dict) -> FirecrackerVM:
@@ -249,6 +255,10 @@ class FirecrackerVM:
         elif created_at is None:
             created_at = utc_now()
 
+        # port_mappings comes as {"2222": 45678} from JSON, convert keys to int
+        port_mappings_raw = data.get('port_mappings') or {}
+        port_mappings = {int(k): v for k, v in port_mappings_raw.items()}
+
         return cls(
             vm_id=data['vm_id'],
             guest_ip=data.get('guest_ip'),
@@ -258,6 +268,7 @@ class FirecrackerVM:
             session_api_key=data.get('session_api_key'),
             status=data.get('status', 'unknown'),
             created_at=created_at,
+            port_mappings=port_mappings,
         )
 
     def to_sandbox_status(self) -> SandboxStatus:
@@ -306,6 +317,7 @@ class FirecrackerVM:
 
             # Add additional ports from the sandbox spec
             # For URL templates, use web_url's hostname (external access) or guest_ip (local)
+            # and the mapped host port (if available) for external access
             external_host = self.guest_ip
             if web_url:
                 parsed = urlparse(web_url)
@@ -313,18 +325,24 @@ class FirecrackerVM:
                     external_host = parsed.hostname
 
             for exposed_port in self.exposed_ports:
+                vm_port = exposed_port.port
+                # Use mapped host port for external access, VM port internally
+                host_port = self.port_mappings.get(vm_port, vm_port)
+                internal_url = f'http://{self.guest_ip}:{vm_port}'
+
                 if exposed_port.url_template:
+                    # Use host port in template for external access
                     url = exposed_port.url_template.format(
-                        host=external_host, port=exposed_port.port
+                        host=external_host, port=host_port
                     )
                 else:
-                    url = f'http://{self.guest_ip}:{exposed_port.port}'
+                    url = f'http://{external_host}:{host_port}'
                 exposed_urls.append(
                     ExposedUrl(
                         name=exposed_port.name,
                         url=url,
-                        port=exposed_port.port,
-                        internal_url=None,
+                        port=host_port,  # Report the host port, not VM port
+                        internal_url=internal_url,
                     )
                 )
 
@@ -569,6 +587,10 @@ class FirecrackerSandboxService(SandboxService):
 
         _logger.info(f'Creating VM {vm_id} with image {self.sdk_image}')
 
+        # Extract port numbers to expose on the host
+        # The daemon will set up port forwarding and return the mapped host ports
+        ports_to_expose = [p.port for p in exposed_ports]
+
         # Call daemon to create VM
         # Don't pass entrypoint - let the daemon extract it from the image metadata
         # The SDK agent-server image has the correct entrypoint built in
@@ -580,6 +602,7 @@ class FirecrackerSandboxService(SandboxService):
             env_vars=env_vars,
             user='openhands',
             working_dir=working_dir,
+            exposed_ports=ports_to_expose,
         )
 
         vm = FirecrackerVM.from_daemon_response(response)
@@ -587,6 +610,7 @@ class FirecrackerSandboxService(SandboxService):
         vm.session_api_key = session_api_key
         vm.working_dir = working_dir
         vm.exposed_ports = exposed_ports
+        # port_mappings is already populated from daemon response
         self._vms[vm_id] = vm
 
         _logger.info(f'VM {vm_id} created successfully, guest_ip={vm.guest_ip}')
