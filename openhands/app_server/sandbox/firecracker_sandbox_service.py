@@ -404,6 +404,15 @@ class FirecrackerSandboxService(SandboxService):
         """Shutdown the service."""
         _logger.info('FirecrackerSandboxService shutdown')
 
+    def _ensure_default_exposed_ports(self, vm: 'FirecrackerVM') -> None:
+        """Ensure VM has default exposed ports if none are set.
+
+        This handles VMs that were created before default ports were added,
+        or when the service cache doesn't have the VM's exposed_ports.
+        """
+        if not vm.exposed_ports:
+            vm.exposed_ports = list(DEFAULT_EXPOSED_PORTS)
+
     async def get_sandbox(self, sandbox_id: str) -> SandboxInfo | None:
         """Get sandbox info by ID."""
         vm_data = self._client.get_vm(sandbox_id)
@@ -417,6 +426,7 @@ class FirecrackerSandboxService(SandboxService):
             vm.sandbox_spec_id = cached.sandbox_spec_id
             vm.working_dir = cached.working_dir
             vm.exposed_ports = cached.exposed_ports
+        self._ensure_default_exposed_ports(vm)
         return vm.to_sandbox_info(self.web_url)
 
     async def get_sandbox_by_session_api_key(
@@ -433,6 +443,7 @@ class FirecrackerSandboxService(SandboxService):
                     vm.sandbox_spec_id = cached.sandbox_spec_id
                     vm.working_dir = cached.working_dir
                     vm.exposed_ports = cached.exposed_ports
+                self._ensure_default_exposed_ports(vm)
                 return vm.to_sandbox_info(self.web_url)
         return None
 
@@ -467,6 +478,7 @@ class FirecrackerSandboxService(SandboxService):
                 vm.sandbox_spec_id = cached.sandbox_spec_id
                 vm.working_dir = cached.working_dir
                 vm.exposed_ports = cached.exposed_ports
+            self._ensure_default_exposed_ports(vm)
             sandboxes.append(vm.to_sandbox_info(self.web_url))
 
         # Simple pagination - just return up to limit
@@ -623,6 +635,7 @@ class FirecrackerSandboxService(SandboxService):
                 vm.sandbox_spec_id = cached.sandbox_spec_id
                 vm.working_dir = cached.working_dir
                 vm.exposed_ports = cached.exposed_ports
+            self._ensure_default_exposed_ports(vm)
             sandboxes.append(vm.to_sandbox_info(self.web_url))
 
         return SandboxPage(
