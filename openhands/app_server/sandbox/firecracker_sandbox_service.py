@@ -22,6 +22,7 @@ Architecture:
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
@@ -70,9 +71,30 @@ _logger = logging.getLogger(__name__)
 # Default daemon socket path
 DEFAULT_DAEMON_SOCKET = '/var/run/oh-firecracker-manager/oh-firecracker.sock'
 
+# Default VM subnet (must match daemon's default)
+DEFAULT_VM_SUBNET = '172.16.0.0/30'
+
 # Environment variable names for agent-server configuration
 SESSION_API_KEY_VARIABLE = 'SESSION_API_KEY'
 WEBHOOK_CALLBACK_VARIABLE = 'WEBHOOK_CALLBACK_URL'
+
+
+def _compute_host_ip(vm_subnet: str) -> str:
+    """Compute the first host IP from a VM subnet.
+
+    The daemon allocates /30 subnets from the configured range.
+    The first host_ip is always at offset .0.1 from the network prefix.
+    This IP is reachable from all VMs on the TAP network.
+
+    Args:
+        vm_subnet: CIDR notation subnet (e.g., '172.16.0.0/30')
+
+    Returns:
+        First host IP (e.g., '172.16.0.1')
+    """
+    network = ipaddress.ip_network(vm_subnet, strict=False)
+    octets = str(network.network_address).split('.')
+    return f'{octets[0]}.{octets[1]}.0.1'
 
 
 class DaemonClient:
@@ -271,6 +293,7 @@ class FirecrackerSandboxService(SandboxService):
         web_url: str | None = None,
         host_port: int | None = None,
         sdk_image: str | None = None,
+        vm_subnet: str | None = None,
     ):
         """Initialize the Firecracker sandbox service.
 
@@ -280,6 +303,7 @@ class FirecrackerSandboxService(SandboxService):
             web_url: External URL where OpenHands is accessible (for proxy URLs)
             host_port: Port of the orchestrator (env: OH_SANDBOX_HOST_PORT, default 3000)
             sdk_image: Docker image to use for VMs (env: OH_FIRECRACKER_SDK_IMAGE)
+            vm_subnet: CIDR for VM subnets (env: FIRECRACKER_VM_SUBNET, default 172.16.0.0/30)
         """
         self.daemon_socket = (
             daemon_socket
@@ -295,12 +319,18 @@ class FirecrackerSandboxService(SandboxService):
             or 'ghcr.io/openhands/agent-server:latest-python'
         )
 
+        # Compute host_ip for internal URLs (MCP, callbacks from VMs)
+        # This must match the daemon's subnet configuration
+        vm_subnet = vm_subnet or os.environ.get('FIRECRACKER_VM_SUBNET', DEFAULT_VM_SUBNET)
+        self.host_ip = _compute_host_ip(vm_subnet)
+
         self._client = DaemonClient(self.daemon_socket)
         # Local cache of VMs we've created (for sandbox_spec_id tracking)
         self._vms: dict[str, FirecrackerVM] = {}
 
         _logger.info(
-            f'FirecrackerSandboxService initialized, daemon socket: {self.daemon_socket}'
+            f'FirecrackerSandboxService initialized, daemon socket: {self.daemon_socket}, '
+            f'host_ip: {self.host_ip}'
         )
 
     async def initialize(self) -> None:
