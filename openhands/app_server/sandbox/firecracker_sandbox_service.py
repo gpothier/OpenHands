@@ -202,6 +202,7 @@ class FirecrackerVM:
     sandbox_spec_id: str | None = None
     status: str = 'starting'
     created_at: datetime = field(default_factory=utc_now)
+    working_dir: str = '/workspace/project'
 
     @classmethod
     def from_daemon_response(cls, data: dict) -> FirecrackerVM:
@@ -244,12 +245,12 @@ class FirecrackerVM:
                 agent_external_url = f'{web_url}/agent/{self.vm_id}'
                 vscode_external_url = (
                     f'{web_url}/vscode/{self.vm_id}/'
-                    f'?tkn={self.session_api_key}&folder=/workspace'
+                    f'?tkn={self.session_api_key}&folder={self.working_dir}'
                 )
             else:
                 agent_external_url = agent_internal_url
                 vscode_external_url = (
-                    f'{vscode_internal_url}/?tkn={self.session_api_key}&folder=/workspace'
+                    f'{vscode_internal_url}/?tkn={self.session_api_key}&folder={self.working_dir}'
                 )
 
             exposed_urls = [
@@ -358,9 +359,10 @@ class FirecrackerSandboxService(SandboxService):
             return None
 
         vm = FirecrackerVM.from_daemon_response(vm_data)
-        # Restore sandbox_spec_id from cache if available
+        # Restore sandbox_spec_id and working_dir from cache if available
         if sandbox_id in self._vms:
             vm.sandbox_spec_id = self._vms[sandbox_id].sandbox_spec_id
+            vm.working_dir = self._vms[sandbox_id].working_dir
         return vm.to_sandbox_info(self.web_url)
 
     async def get_sandbox_by_session_api_key(
@@ -374,6 +376,7 @@ class FirecrackerSandboxService(SandboxService):
                 vm = FirecrackerVM.from_daemon_response(vm_data)
                 if vm.vm_id in self._vms:
                     vm.sandbox_spec_id = self._vms[vm.vm_id].sandbox_spec_id
+                    vm.working_dir = self._vms[vm.vm_id].working_dir
                 return vm.to_sandbox_info(self.web_url)
         return None
 
@@ -405,6 +408,7 @@ class FirecrackerSandboxService(SandboxService):
             vm = FirecrackerVM.from_daemon_response(vm_data)
             if vm.vm_id in self._vms:
                 vm.sandbox_spec_id = self._vms[vm.vm_id].sandbox_spec_id
+                vm.working_dir = self._vms[vm.vm_id].working_dir
             sandboxes.append(vm.to_sandbox_info(self.web_url))
 
         # Simple pagination - just return up to limit
@@ -451,14 +455,17 @@ class FirecrackerSandboxService(SandboxService):
         vm_id = sandbox_id or f'fc-{secrets.token_hex(8)}'
         session_api_key = secrets.token_urlsafe(32)
 
-        # Get environment variables (spec env + extra_env)
+        # Get environment variables and working_dir from spec
         env_vars: dict[str, str] = {}
+        working_dir = '/workspace/project'  # Default
         if sandbox_spec_id and self.sandbox_spec_service:
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
                 sandbox_spec_id
             )
-            if sandbox_spec and sandbox_spec.initial_env:
-                env_vars.update(sandbox_spec.initial_env)
+            if sandbox_spec:
+                if sandbox_spec.initial_env:
+                    env_vars.update(sandbox_spec.initial_env)
+                working_dir = sandbox_spec.working_dir
         else:
             env_vars.update(get_agent_server_env())
         if extra_env:
@@ -491,6 +498,7 @@ class FirecrackerSandboxService(SandboxService):
         vm = FirecrackerVM.from_daemon_response(response)
         vm.sandbox_spec_id = sandbox_spec_id
         vm.session_api_key = session_api_key
+        vm.working_dir = working_dir
         self._vms[vm_id] = vm
 
         _logger.info(f'VM {vm_id} created successfully, guest_ip={vm.guest_ip}')

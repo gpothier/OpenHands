@@ -67,7 +67,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                         'ENV_LOG_LEVEL': '20',
                         **get_agent_server_env(),
                     },
-                    working_dir='/workspace',
+                    working_dir='/workspace/project',
                 )
             )
 
@@ -93,7 +93,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                         **get_agent_server_env(),
                     },
                     kvm_enabled=True,
-                    working_dir='/workspace',
+                    working_dir='/workspace/project',
                 )
             )
 
@@ -122,7 +122,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                     **get_agent_server_env(),
                 },
                 kvm_enabled=True,
-                working_dir='/workspace',
+                working_dir='/workspace/project',
             )
 
         # Docker spec
@@ -142,7 +142,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                     'ENV_LOG_LEVEL': '20',
                     **get_agent_server_env(),
                 },
-                working_dir='/workspace',
+                working_dir='/workspace/project',
             )
 
         return None
