@@ -58,6 +58,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                     type=SandboxType.DOCKER,
                     description='Run in a Docker container with process-level isolation',
                     initial_env=get_agent_server_env(),
+                    working_dir='/workspace',
                 )
             )
 
@@ -74,6 +75,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                     ),
                     initial_env=get_agent_server_env(),
                     kvm_enabled=True,
+                    working_dir='/workspace',
                 )
             )
 
@@ -93,6 +95,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                 description='Run in a Firecracker microVM with hardware-level isolation',
                 initial_env=get_agent_server_env(),
                 kvm_enabled=True,
+                working_dir='/workspace',
             )
 
         # Docker spec
@@ -103,6 +106,7 @@ class CompositeSandboxSpecService(SandboxSpecService):
                 type=SandboxType.DOCKER,
                 description='Run in a Docker container',
                 initial_env=get_agent_server_env(),
+                working_dir='/workspace',
             )
 
         return None
