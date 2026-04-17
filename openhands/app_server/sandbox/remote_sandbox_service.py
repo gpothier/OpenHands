@@ -431,10 +431,10 @@ class RemoteSandboxService(SandboxService):
         self,
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
-        ssh_public_keys: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox by creating a remote runtime."""
-        # Note: ssh_public_keys would need to be passed to the runtime provider
+        # Note: extra_env would need to be passed to the runtime provider
         # This is a placeholder for future implementation
         try:
             # Enforce sandbox limits by cleaning up old sandboxes

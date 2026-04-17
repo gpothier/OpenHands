@@ -359,7 +359,7 @@ class DockerSandboxService(SandboxService):
         self,
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
-        ssh_public_keys: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
         # Warn about port collision risk when using host network mode with multiple sandboxes
@@ -392,16 +392,14 @@ class DockerSandboxService(SandboxService):
         container_name = f'{self.container_name_prefix}{sandbox_id}'
         session_api_key = base62.encodebytes(os.urandom(32))
 
-        # Prepare environment variables
+        # Prepare environment variables (spec env + extra_env)
         env_vars = sandbox_spec.initial_env.copy()
+        if extra_env:
+            env_vars.update(extra_env)
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
         env_vars[WEBHOOK_CALLBACK_VARIABLE] = (
             f'http://host.docker.internal:{self.host_port}/api/v1/webhooks'
         )
-
-        # Pass SSH public keys for passwordless SSH access
-        if ssh_public_keys:
-            env_vars[SSH_PUBLIC_KEYS_VARIABLE] = '\n'.join(ssh_public_keys)
 
         # Set CORS origins for remote browser access when web_url is configured.
         # This allows the agent-server container to accept requests from the

@@ -71,7 +71,10 @@ from openhands.app_server.sandbox.sandbox_models import (
     SandboxInfo,
     SandboxStatus,
 )
-from openhands.app_server.sandbox.sandbox_service import SandboxService
+from openhands.app_server.sandbox.sandbox_service import (
+    SSH_PUBLIC_KEYS_VARIABLE,
+    SandboxService,
+)
 from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
 from openhands.app_server.services.injector import InjectorState
 from openhands.app_server.services.jwt_service import JwtService
@@ -671,15 +674,20 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             # Return empty counts on error - will default to first sandbox
             return {}
 
-    async def _get_ssh_public_keys(self) -> list[str] | None:
-        """Get SSH public keys from user settings."""
+    async def _get_extra_env(self) -> dict[str, str]:
+        """Build extra environment variables for sandbox startup.
+
+        Currently includes SSH public keys from user settings.
+        """
+        extra_env: dict[str, str] = {}
         try:
             user_info = await self.user_context.get_user_info()
             if user_info.ssh_public_keys:
-                return [k.key for k in user_info.ssh_public_keys]
+                keys = [k.key for k in user_info.ssh_public_keys]
+                extra_env[SSH_PUBLIC_KEYS_VARIABLE] = '\n'.join(keys)
         except Exception as e:
-            _logger.warning(f'Failed to get SSH public keys: {e}')
-        return None
+            _logger.warning(f'Failed to get user settings for extra_env: {e}')
+        return extra_env
 
     async def _wait_for_sandbox_start(
         self, task: AppConversationStartTask
@@ -699,12 +707,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     else None
                 )
 
-                # Get SSH public keys from user settings
-                ssh_public_keys = await self._get_ssh_public_keys()
+                # Get extra environment variables (SSH keys, etc.)
+                extra_env = await self._get_extra_env()
 
                 sandbox = await self.sandbox_service.start_sandbox(
                     sandbox_id=sandbox_id_str,
-                    ssh_public_keys=ssh_public_keys,
+                    extra_env=extra_env or None,
                 )
             task.sandbox_id = sandbox.id
         else:

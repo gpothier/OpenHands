@@ -290,11 +290,11 @@ class ProcessSandboxService(SandboxService):
         self,
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
-        ssh_public_keys: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
-        # Note: ssh_public_keys is accepted but not used in process sandbox service
-        # as SSH is only available in containerized environments
+        # Note: extra_env is accepted but not used in process sandbox service
+        # as process sandboxes inherit the parent environment
 
         # Get sandbox spec
         if sandbox_spec_id is None:
