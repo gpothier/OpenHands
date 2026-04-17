@@ -10,9 +10,9 @@ from openhands.app_server.sandbox.sandbox_spec_models import (
     SandboxSpecInfo,
 )
 from openhands.app_server.sandbox.sandbox_spec_service import (
+    DEFAULT_WORKING_DIR,
     SandboxSpecService,
     SandboxSpecServiceInjector,
-    get_agent_server_env,
     get_agent_server_image,
 )
 from openhands.app_server.services.injector import InjectorState
@@ -23,16 +23,9 @@ def get_default_sandbox_specs():
         SandboxSpecInfo(
             id=get_agent_server_image(),
             command=['/usr/local/bin/openhands-agent-server', '--port', '60000'],
-            initial_env={
-                'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
-                'LOG_JSON': 'true',
-                'OH_ENABLE_VNC': '0',
-                'OH_CONVERSATIONS_PATH': '/workspace/conversations',
-                'OH_BASH_EVENTS_DIR': '/workspace/bash_events',
-                'OH_VSCODE_PORT': '60001',
-                **get_agent_server_env(),
-            },
-            working_dir='/workspace/project',
+            # Remote-specific env var override (defaults come from sandbox service)
+            initial_env={'OH_VSCODE_PORT': '60001'},
+            working_dir=DEFAULT_WORKING_DIR,
         )
     ]
 

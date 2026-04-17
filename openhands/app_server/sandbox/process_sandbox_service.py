@@ -35,7 +35,10 @@ from openhands.app_server.sandbox.sandbox_service import (
     SandboxServiceInjector,
 )
 from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
-from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
+from openhands.app_server.sandbox.sandbox_spec_service import (
+    SandboxSpecService,
+    get_default_sandbox_env,
+)
 from openhands.app_server.services.injector import InjectorState
 from openhands.app_server.utils.docker_utils import (
     replace_localhost_hostname_for_docker,
@@ -115,9 +118,11 @@ class ProcessSandboxService(SandboxService):
     ) -> subprocess.Popen:
         """Start the agent server process."""
 
-        # Prepare environment variables
+        # Prepare environment variables (defaults + spec overrides)
         env = os.environ.copy()
-        env.update(sandbox_spec.initial_env)
+        env.update(get_default_sandbox_env())
+        if sandbox_spec.initial_env:
+            env.update(sandbox_spec.initial_env)
         env['SESSION_API_KEY'] = session_api_key
 
         # Prepare command arguments

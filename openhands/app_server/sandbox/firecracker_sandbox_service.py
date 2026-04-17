@@ -54,9 +54,10 @@ from openhands.app_server.sandbox.sandbox_spec_models import (
     SandboxType,
 )
 from openhands.app_server.sandbox.sandbox_spec_service import (
+    DEFAULT_WORKING_DIR,
     SandboxSpecService,
     SandboxSpecServiceInjector,
-    get_agent_server_env,
+    get_default_sandbox_env,
 )
 from openhands.app_server.services.injector import InjectorState
 
@@ -455,9 +456,9 @@ class FirecrackerSandboxService(SandboxService):
         vm_id = sandbox_id or f'fc-{secrets.token_hex(8)}'
         session_api_key = secrets.token_urlsafe(32)
 
-        # Get environment variables and working_dir from spec
-        env_vars: dict[str, str] = {}
-        working_dir = '/workspace/project'  # Default
+        # Get environment variables (defaults + spec overrides + extra_env)
+        env_vars = get_default_sandbox_env()
+        working_dir = DEFAULT_WORKING_DIR
         if sandbox_spec_id and self.sandbox_spec_service:
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
                 sandbox_spec_id
@@ -466,8 +467,6 @@ class FirecrackerSandboxService(SandboxService):
                 if sandbox_spec.initial_env:
                     env_vars.update(sandbox_spec.initial_env)
                 working_dir = sandbox_spec.working_dir
-        else:
-            env_vars.update(get_agent_server_env())
         if extra_env:
             env_vars.update(extra_env)
 
