@@ -118,7 +118,10 @@ class CompositeSandboxService(SandboxService):
         return results
 
     async def start_sandbox(
-        self, sandbox_spec_id: str | None = None, sandbox_id: str | None = None
+        self,
+        sandbox_spec_id: str | None = None,
+        sandbox_id: str | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxInfo:
         """Start a sandbox using the appropriate service based on spec type."""
         _logger.info(
@@ -128,7 +131,7 @@ class CompositeSandboxService(SandboxService):
         service = await self._get_service_for_spec(sandbox_spec_id)
         service_name = type(service).__name__
         _logger.info(f'Routing to service: {service_name}')
-        info = await service.start_sandbox(sandbox_spec_id, sandbox_id)
+        info = await service.start_sandbox(sandbox_spec_id, sandbox_id, extra_env)
         # Track ownership
         self._sandbox_ownership[info.id] = service
         return info

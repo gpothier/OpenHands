@@ -442,13 +442,16 @@ class FirecrackerSandboxService(SandboxService):
         return f"http://{vm_data['guest_ip']}:{port}"
 
     async def start_sandbox(
-        self, sandbox_spec_id: str | None = None, sandbox_id: str | None = None
+        self,
+        sandbox_spec_id: str | None = None,
+        sandbox_id: str | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SandboxInfo:
         """Start a new Firecracker microVM sandbox."""
         vm_id = sandbox_id or f'fc-{secrets.token_hex(8)}'
         session_api_key = secrets.token_urlsafe(32)
 
-        # Get environment variables
+        # Get environment variables (spec env + extra_env)
         env_vars: dict[str, str] = {}
         if sandbox_spec_id and self.sandbox_spec_service:
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
@@ -458,6 +461,8 @@ class FirecrackerSandboxService(SandboxService):
                 env_vars.update(sandbox_spec.initial_env)
         else:
             env_vars.update(get_agent_server_env())
+        if extra_env:
+            env_vars.update(extra_env)
 
         # Add session API key
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
