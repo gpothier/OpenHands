@@ -50,6 +50,7 @@ from openhands.app_server.sandbox.sandbox_service import (
     SandboxServiceInjector,
 )
 from openhands.app_server.sandbox.sandbox_spec_models import (
+    ExposedPort,
     SandboxSpecInfo,
     SandboxType,
 )
@@ -145,6 +146,8 @@ class DaemonClient:
         session_api_key: str,
         env_vars: dict[str, str] | None = None,
         entrypoint: list[str] | None = None,
+        user: str | None = None,
+        working_dir: str | None = None,
     ) -> dict:
         """Create a new VM.
         
@@ -154,6 +157,8 @@ class DaemonClient:
             session_api_key: API key for the agent server
             env_vars: Environment variables to set in the VM
             entrypoint: Command to run as the main service (overrides image entrypoint)
+            user: User to run the entrypoint as (default: root)
+            working_dir: Working directory for the entrypoint
         """
         body = {
             'vm_id': vm_id,
@@ -163,6 +168,10 @@ class DaemonClient:
         }
         if entrypoint:
             body['entrypoint'] = entrypoint
+        if user:
+            body['user'] = user
+        if working_dir:
+            body['working_dir'] = working_dir
         response = self._send_request('POST', '/vms', body, timeout=1800)
         if response.get('error'):
             raise SandboxError(response['error'])
@@ -204,6 +213,7 @@ class FirecrackerVM:
     status: str = 'starting'
     created_at: datetime = field(default_factory=utc_now)
     working_dir: str = '/workspace/project'
+    exposed_ports: list[ExposedPort] = field(default_factory=list)
 
     @classmethod
     def from_daemon_response(cls, data: dict) -> FirecrackerVM:
@@ -268,6 +278,23 @@ class FirecrackerVM:
                     internal_url=vscode_internal_url,
                 ),
             ]
+
+            # Add additional ports from the sandbox spec
+            for exposed_port in self.exposed_ports:
+                if exposed_port.url_template:
+                    url = exposed_port.url_template.format(
+                        host=self.guest_ip, port=exposed_port.port
+                    )
+                else:
+                    url = f'http://{self.guest_ip}:{exposed_port.port}'
+                exposed_urls.append(
+                    ExposedUrl(
+                        name=exposed_port.name,
+                        url=url,
+                        port=exposed_port.port,
+                        internal_url=None,
+                    )
+                )
 
         return SandboxInfo(
             id=self.vm_id,
@@ -360,10 +387,12 @@ class FirecrackerSandboxService(SandboxService):
             return None
 
         vm = FirecrackerVM.from_daemon_response(vm_data)
-        # Restore sandbox_spec_id and working_dir from cache if available
+        # Restore sandbox_spec_id, working_dir, and exposed_ports from cache
         if sandbox_id in self._vms:
-            vm.sandbox_spec_id = self._vms[sandbox_id].sandbox_spec_id
-            vm.working_dir = self._vms[sandbox_id].working_dir
+            cached = self._vms[sandbox_id]
+            vm.sandbox_spec_id = cached.sandbox_spec_id
+            vm.working_dir = cached.working_dir
+            vm.exposed_ports = cached.exposed_ports
         return vm.to_sandbox_info(self.web_url)
 
     async def get_sandbox_by_session_api_key(
@@ -376,8 +405,10 @@ class FirecrackerSandboxService(SandboxService):
             if vm_data.get('session_api_key') == session_api_key:
                 vm = FirecrackerVM.from_daemon_response(vm_data)
                 if vm.vm_id in self._vms:
-                    vm.sandbox_spec_id = self._vms[vm.vm_id].sandbox_spec_id
-                    vm.working_dir = self._vms[vm.vm_id].working_dir
+                    cached = self._vms[vm.vm_id]
+                    vm.sandbox_spec_id = cached.sandbox_spec_id
+                    vm.working_dir = cached.working_dir
+                    vm.exposed_ports = cached.exposed_ports
                 return vm.to_sandbox_info(self.web_url)
         return None
 
@@ -408,8 +439,10 @@ class FirecrackerSandboxService(SandboxService):
         for vm_data in vms:
             vm = FirecrackerVM.from_daemon_response(vm_data)
             if vm.vm_id in self._vms:
-                vm.sandbox_spec_id = self._vms[vm.vm_id].sandbox_spec_id
-                vm.working_dir = self._vms[vm.vm_id].working_dir
+                cached = self._vms[vm.vm_id]
+                vm.sandbox_spec_id = cached.sandbox_spec_id
+                vm.working_dir = cached.working_dir
+                vm.exposed_ports = cached.exposed_ports
             sandboxes.append(vm.to_sandbox_info(self.web_url))
 
         # Simple pagination - just return up to limit
@@ -459,6 +492,7 @@ class FirecrackerSandboxService(SandboxService):
         # Get environment variables (defaults + spec overrides + extra_env)
         env_vars = get_default_sandbox_env()
         working_dir = DEFAULT_WORKING_DIR
+        exposed_ports: list[ExposedPort] = []
         if sandbox_spec_id and self.sandbox_spec_service:
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
                 sandbox_spec_id
@@ -467,6 +501,7 @@ class FirecrackerSandboxService(SandboxService):
                 if sandbox_spec.initial_env:
                     env_vars.update(sandbox_spec.initial_env)
                 working_dir = sandbox_spec.working_dir
+                exposed_ports = sandbox_spec.exposed_ports
         if extra_env:
             env_vars.update(extra_env)
 
@@ -487,17 +522,21 @@ class FirecrackerSandboxService(SandboxService):
         # Call daemon to create VM
         # Don't pass entrypoint - let the daemon extract it from the image metadata
         # The SDK agent-server image has the correct entrypoint built in
+        # Pass user='openhands' to run as the openhands user (consistent with Docker)
         response = self._client.create_vm(
             vm_id=vm_id,
             image=self.sdk_image,
             session_api_key=session_api_key,
             env_vars=env_vars,
+            user='openhands',
+            working_dir=working_dir,
         )
 
         vm = FirecrackerVM.from_daemon_response(response)
         vm.sandbox_spec_id = sandbox_spec_id
         vm.session_api_key = session_api_key
         vm.working_dir = working_dir
+        vm.exposed_ports = exposed_ports
         self._vms[vm_id] = vm
 
         _logger.info(f'VM {vm_id} created successfully, guest_ip={vm.guest_ip}')
@@ -550,7 +589,10 @@ class FirecrackerSandboxService(SandboxService):
         for vm_data in page_vms:
             vm = FirecrackerVM.from_daemon_response(vm_data)
             if vm.vm_id in self._vms:
-                vm.sandbox_spec_id = self._vms[vm.vm_id].sandbox_spec_id
+                cached = self._vms[vm.vm_id]
+                vm.sandbox_spec_id = cached.sandbox_spec_id
+                vm.working_dir = cached.working_dir
+                vm.exposed_ports = cached.exposed_ports
             sandboxes.append(vm.to_sandbox_info(self.web_url))
 
         return SandboxPage(
