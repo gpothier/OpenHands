@@ -39,7 +39,10 @@ from openhands.app_server.sandbox.preset_sandbox_spec_service import (
 )
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
+    SSH,
     VSCODE,
+    WORKER_1,
+    WORKER_2,
     ExposedUrl,
     SandboxInfo,
     SandboxPage,
@@ -79,6 +82,27 @@ DEFAULT_VM_SUBNET = '172.16.0.0/30'
 # Environment variable names for agent-server configuration
 SESSION_API_KEY_VARIABLE = 'SESSION_API_KEY'
 WEBHOOK_CALLBACK_VARIABLE = 'WEBHOOK_CALLBACK_URL'
+
+# Default exposed ports for Firecracker sandboxes (beyond AGENT_SERVER and VSCODE)
+# These are merged with any spec-defined exposed_ports
+DEFAULT_EXPOSED_PORTS = [
+    ExposedPort(
+        name=SSH,
+        description='SSH server for Local VSCode Remote-SSH access',
+        port=2222,
+        url_template='ssh://{host}:{port}',
+    ),
+    ExposedPort(
+        name=WORKER_1,
+        description='First port for agent-started application servers',
+        port=8011,
+    ),
+    ExposedPort(
+        name=WORKER_2,
+        description='Second port for agent-started application servers',
+        port=8012,
+    ),
+]
 
 
 def _compute_host_ip(vm_subnet: str) -> str:
@@ -492,7 +516,7 @@ class FirecrackerSandboxService(SandboxService):
         # Get environment variables (defaults + spec overrides + extra_env)
         env_vars = get_default_sandbox_env()
         working_dir = DEFAULT_WORKING_DIR
-        exposed_ports: list[ExposedPort] = []
+        spec_exposed_ports: list[ExposedPort] = []
         if sandbox_spec_id and self.sandbox_spec_service:
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
                 sandbox_spec_id
@@ -501,9 +525,15 @@ class FirecrackerSandboxService(SandboxService):
                 if sandbox_spec.initial_env:
                     env_vars.update(sandbox_spec.initial_env)
                 working_dir = sandbox_spec.working_dir
-                exposed_ports = sandbox_spec.exposed_ports
+                spec_exposed_ports = sandbox_spec.exposed_ports
         if extra_env:
             env_vars.update(extra_env)
+
+        # Merge default exposed ports with spec ports (spec ports override defaults)
+        spec_port_names = {p.name for p in spec_exposed_ports}
+        exposed_ports = [
+            p for p in DEFAULT_EXPOSED_PORTS if p.name not in spec_port_names
+        ] + list(spec_exposed_ports)
 
         # Add session API key
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
