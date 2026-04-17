@@ -57,7 +57,16 @@ class CompositeSandboxSpecService(SandboxSpecService):
                     name='Docker Container',
                     type=SandboxType.DOCKER,
                     description='Run in a Docker container with process-level isolation',
-                    initial_env=get_agent_server_env(),
+                    initial_env={
+                        'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
+                        'OH_ENABLE_VNC': '0',
+                        'LOG_JSON': 'true',
+                        'OH_CONVERSATIONS_PATH': '/workspace/conversations',
+                        'OH_BASH_EVENTS_DIR': '/workspace/bash_events',
+                        'PYTHONUNBUFFERED': '1',
+                        'ENV_LOG_LEVEL': '20',
+                        **get_agent_server_env(),
+                    },
                     working_dir='/workspace',
                 )
             )
@@ -73,7 +82,16 @@ class CompositeSandboxSpecService(SandboxSpecService):
                         'Run in a Firecracker microVM with hardware-level isolation '
                         '(KVM). Provides stronger security boundaries than containers.'
                     ),
-                    initial_env=get_agent_server_env(),
+                    initial_env={
+                        'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
+                        'OH_ENABLE_VNC': '0',
+                        'LOG_JSON': 'true',
+                        'OH_CONVERSATIONS_PATH': '/workspace/conversations',
+                        'OH_BASH_EVENTS_DIR': '/workspace/bash_events',
+                        'PYTHONUNBUFFERED': '1',
+                        'ENV_LOG_LEVEL': '20',
+                        **get_agent_server_env(),
+                    },
                     kvm_enabled=True,
                     working_dir='/workspace',
                 )
@@ -93,7 +111,16 @@ class CompositeSandboxSpecService(SandboxSpecService):
                 name='Firecracker microVM',
                 type=SandboxType.FIRECRACKER,
                 description='Run in a Firecracker microVM with hardware-level isolation',
-                initial_env=get_agent_server_env(),
+                initial_env={
+                    'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
+                    'OH_ENABLE_VNC': '0',
+                    'LOG_JSON': 'true',
+                    'OH_CONVERSATIONS_PATH': '/workspace/conversations',
+                    'OH_BASH_EVENTS_DIR': '/workspace/bash_events',
+                    'PYTHONUNBUFFERED': '1',
+                    'ENV_LOG_LEVEL': '20',
+                    **get_agent_server_env(),
+                },
                 kvm_enabled=True,
                 working_dir='/workspace',
             )
@@ -105,7 +132,16 @@ class CompositeSandboxSpecService(SandboxSpecService):
                 name='Docker Container',
                 type=SandboxType.DOCKER,
                 description='Run in a Docker container',
-                initial_env=get_agent_server_env(),
+                initial_env={
+                    'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
+                    'OH_ENABLE_VNC': '0',
+                    'LOG_JSON': 'true',
+                    'OH_CONVERSATIONS_PATH': '/workspace/conversations',
+                    'OH_BASH_EVENTS_DIR': '/workspace/bash_events',
+                    'PYTHONUNBUFFERED': '1',
+                    'ENV_LOG_LEVEL': '20',
+                    **get_agent_server_env(),
+                },
                 working_dir='/workspace',
             )
 
