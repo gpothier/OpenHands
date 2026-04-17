@@ -44,7 +44,10 @@ from openhands.app_server.sandbox.sandbox_service import (
     SandboxServiceInjector,
 )
 from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
-from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
+from openhands.app_server.sandbox.sandbox_spec_service import (
+    SandboxSpecService,
+    get_default_sandbox_env,
+)
 from openhands.app_server.services.injector import InjectorState
 from openhands.app_server.user.specifiy_user_context import ADMIN, USER_CONTEXT_ATTR
 from openhands.app_server.user.user_context import UserContext
@@ -258,7 +261,9 @@ class RemoteSandboxService(SandboxService):
         self, sandbox_spec: SandboxSpecInfo, sandbox_id: str
     ) -> dict[str, str]:
         """Initialize the environment variables for the sandbox."""
-        environment = sandbox_spec.initial_env.copy()
+        environment = get_default_sandbox_env()
+        if sandbox_spec.initial_env:
+            environment.update(sandbox_spec.initial_env)
 
         # If a public facing url is defined, add a callback to the agent server environment.
         if self.web_url:

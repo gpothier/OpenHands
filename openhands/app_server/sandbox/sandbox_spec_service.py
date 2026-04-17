@@ -69,6 +69,10 @@ def get_agent_server_image() -> str:
     return AGENT_SERVER_IMAGE
 
 
+# Default working directory for sandbox specs
+# All sandbox types (Docker, Firecracker, Remote) use the same structure
+DEFAULT_WORKING_DIR = '/workspace/project'
+
 # Prefixes for environment variables that should be auto-forwarded to agent-server
 # These are typically configuration variables that affect the agent's behavior
 AUTO_FORWARD_PREFIXES = ('LLM_',)
@@ -124,3 +128,25 @@ def get_agent_server_env() -> dict[str, str]:
     result.update(explicit_env)
 
     return result
+
+
+def get_default_sandbox_env() -> dict[str, str]:
+    """Get the default environment variables for sandbox specs.
+
+    Returns the common environment variables needed by all sandbox types
+    (Docker, Firecracker, Remote). This includes VSCode configuration,
+    logging settings, and workspace paths.
+
+    Returns:
+        dict[str, str]: Environment variables for sandbox initialization.
+    """
+    return {
+        'OPENVSCODE_SERVER_ROOT': '/openhands/.openvscode-server',
+        'OH_ENABLE_VNC': '0',
+        'LOG_JSON': 'true',
+        'OH_CONVERSATIONS_PATH': '/workspace/conversations',
+        'OH_BASH_EVENTS_DIR': '/workspace/bash_events',
+        'PYTHONUNBUFFERED': '1',
+        'ENV_LOG_LEVEL': '20',
+        **get_agent_server_env(),
+    }

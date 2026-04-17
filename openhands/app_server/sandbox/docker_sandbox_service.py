@@ -34,7 +34,10 @@ from openhands.app_server.sandbox.sandbox_service import (
     SandboxService,
     SandboxServiceInjector,
 )
-from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
+from openhands.app_server.sandbox.sandbox_spec_service import (
+    SandboxSpecService,
+    get_default_sandbox_env,
+)
 from openhands.app_server.services.injector import InjectorState
 from openhands.app_server.utils.docker_utils import (
     replace_localhost_hostname_for_docker,
@@ -442,8 +445,10 @@ class DockerSandboxService(SandboxService):
         container_name = f'{self.container_name_prefix}{sandbox_id}'
         session_api_key = base62.encodebytes(os.urandom(32))
 
-        # Prepare environment variables (spec env + extra_env)
-        env_vars = sandbox_spec.initial_env.copy()
+        # Prepare environment variables (defaults + spec overrides + extra_env)
+        env_vars = get_default_sandbox_env()
+        if sandbox_spec.initial_env:
+            env_vars.update(sandbox_spec.initial_env)
         if extra_env:
             env_vars.update(extra_env)
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
