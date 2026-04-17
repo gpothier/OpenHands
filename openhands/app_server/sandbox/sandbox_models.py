@@ -35,6 +35,7 @@ class ExposedUrl(BaseModel):
 
 # Standard names
 AGENT_SERVER = 'AGENT_SERVER'
+SSH = 'SSH'
 VSCODE = 'VSCODE'
 WORKER_1 = 'WORKER_1'
 WORKER_2 = 'WORKER_2'
