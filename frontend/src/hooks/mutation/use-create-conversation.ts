@@ -18,6 +18,7 @@ interface CreateConversationVariables {
   agentType?: "default" | "plan";
   plugins?: PluginSpec[];
   sandboxSpecId?: string; // Sandbox spec for selecting Docker/Firecracker
+  fcStorageSizeGb?: number; // Storage size in GB for Firecracker sandboxes
 }
 
 // Response type for V1 conversations
@@ -50,12 +51,15 @@ export const useCreateConversation = () => {
         agentType,
         plugins,
         sandboxSpecId,
+        fcStorageSizeGb,
       } = variables;
 
-      // Debug: log extracted sandboxSpecId
+      // Debug: log extracted sandboxSpecId and fcStorageSizeGb
       console.log(
         "useCreateConversation mutationFn: sandboxSpecId =",
         sandboxSpecId,
+        ", fcStorageSizeGb =",
+        fcStorageSizeGb,
       );
 
       // Use V1 API - creates a conversation start task
@@ -73,6 +77,7 @@ export const useCreateConversation = () => {
         undefined, // sandbox_id - not reusing an existing sandbox
         undefined, // llm_model - use default
         sandboxSpecId,
+        fcStorageSizeGb,
       );
 
       // Return a special task ID that the frontend will recognize

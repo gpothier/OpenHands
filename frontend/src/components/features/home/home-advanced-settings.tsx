@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { I18nKey } from "#/i18n/declaration";
 import { useSandboxSpecs } from "#/hooks/query/use-sandbox-specs";
 import { useSelectedSandboxSpec } from "#/context/selected-sandbox-spec-context";
 import { SandboxTypeSelector } from "../settings/sandbox-settings/sandbox-type-selector";
+import { SettingsInput } from "../settings/settings-input";
 import ChevronDownIcon from "#/icons/chevron-down-small.svg?react";
+import { DEFAULT_SETTINGS } from "#/services/settings";
 
 /**
  * Advanced settings panel for the home page.
@@ -15,12 +17,33 @@ export function HomeAdvancedSettings() {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const { data: specsPage } = useSandboxSpecs();
-  const { selectedSpecId, setSelectedSpecId } = useSelectedSandboxSpec();
+  const {
+    selectedSpecId,
+    setSelectedSpecId,
+    selectedStorageSizeGb,
+    setSelectedStorageSizeGb,
+  } = useSelectedSandboxSpec();
+
+  // Determine if the selected sandbox type is Firecracker
+  const isFirecrackerSelected = useMemo(() => {
+    if (!selectedSpecId || !specsPage?.items) return false;
+    const selectedSpec = specsPage.items.find(
+      (spec) => spec.id === selectedSpecId,
+    );
+    return selectedSpec?.type === "firecracker";
+  }, [selectedSpecId, specsPage?.items]);
 
   // Don't render until we have the specs data
   if (!specsPage?.items) {
     return null;
   }
+
+  const handleStorageSizeChange = (value: string) => {
+    const sizeGb = parseInt(value, 10);
+    if (!Number.isNaN(sizeGb) && sizeGb >= 8) {
+      setSelectedStorageSizeGb(sizeGb);
+    }
+  };
 
   return (
     <div className="pt-4 flex justify-center">
@@ -46,7 +69,7 @@ export function HomeAdvancedSettings() {
 
         {isExpanded && (
           <div
-            className="mt-2 p-4 rounded-lg border border-[#525252] bg-[#1E1E1E]"
+            className="mt-2 p-4 rounded-lg border border-[#525252] bg-[#1E1E1E] flex flex-col gap-4"
             data-testid="advanced-settings-content"
           >
             <SandboxTypeSelector
@@ -55,6 +78,29 @@ export function HomeAdvancedSettings() {
               selectedSpecId={selectedSpecId}
               onSelectionChange={setSelectedSpecId}
             />
+            {isFirecrackerSelected && (
+              <div className="flex flex-col gap-2">
+                <SettingsInput
+                  testId="home-fc-storage-size"
+                  name="home-fc-storage-size"
+                  type="number"
+                  label={t(I18nKey.SETTINGS$STORAGE_SIZE)}
+                  defaultValue={
+                    selectedStorageSizeGb?.toString() ||
+                    DEFAULT_SETTINGS.default_fc_storage_size_gb?.toString() ||
+                    "16"
+                  }
+                  onChange={handleStorageSizeChange}
+                  placeholder={t(I18nKey.SETTINGS$STORAGE_SIZE_GB)}
+                  min={8}
+                  step={1}
+                  className="w-full"
+                />
+                <p className="text-xs text-[#A3A3A3]">
+                  {t(I18nKey.SETTINGS$STORAGE_SIZE_DESCRIPTION)}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

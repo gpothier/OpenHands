@@ -73,6 +73,8 @@ function AppSettingsScreen() {
   const [selectedSandboxSpecId, setSelectedSandboxSpecId] = React.useState<
     string | null
   >(null);
+  const [fcStorageSizeHasChanged, setFcStorageSizeHasChanged] =
+    React.useState(false);
 
   const formAction = (formData: FormData) => {
     const languageLabel = formData.get("language-input")?.toString();
@@ -116,6 +118,16 @@ function AppSettingsScreen() {
         ? selectedSandboxSpecId
         : settings?.default_sandbox_spec_id;
 
+    // Parse the storage size input value
+    const fcStorageSizeValue = formData
+      .get("fc-storage-size-input")
+      ?.toString();
+    const defaultFcStorageSizeGb = fcStorageSizeValue
+      ? parseInt(fcStorageSizeValue, 10) ||
+        DEFAULT_SETTINGS.default_fc_storage_size_gb
+      : (settings?.default_fc_storage_size_gb ??
+        DEFAULT_SETTINGS.default_fc_storage_size_gb);
+
     saveSettings(
       {
         language,
@@ -128,6 +140,7 @@ function AppSettingsScreen() {
         git_user_name: gitUserName,
         git_user_email: gitUserEmail,
         default_sandbox_spec_id: defaultSandboxSpecId,
+        default_fc_storage_size_gb: defaultFcStorageSizeGb,
       },
       {
         onSuccess: () => {
@@ -150,6 +163,7 @@ function AppSettingsScreen() {
           setGitUserEmailHasChanged(false);
           setSandboxTypeHasChanged(false);
           setSelectedSandboxSpecId(null);
+          setFcStorageSizeHasChanged(false);
         },
       },
     );
@@ -225,6 +239,14 @@ function AppSettingsScreen() {
     setSandboxTypeHasChanged(specId !== currentSpecId);
   };
 
+  const checkIfFcStorageSizeHasChanged = (value: string) => {
+    const newValue = parseInt(value, 10);
+    const currentValue =
+      settings?.default_fc_storage_size_gb ??
+      DEFAULT_SETTINGS.default_fc_storage_size_gb;
+    setFcStorageSizeHasChanged(newValue !== currentValue);
+  };
+
   const formIsClean =
     !languageInputHasChanged &&
     !analyticsSwitchHasChanged &&
@@ -235,7 +257,8 @@ function AppSettingsScreen() {
     !maxBudgetPerTaskHasChanged &&
     !gitUserNameHasChanged &&
     !gitUserEmailHasChanged &&
-    !sandboxTypeHasChanged;
+    !sandboxTypeHasChanged &&
+    !fcStorageSizeHasChanged;
 
   const shouldBeLoading = !settings || isLoading || isPending;
 
@@ -323,15 +346,36 @@ function AppSettingsScreen() {
             <p className="text-xs mb-4">
               {t(I18nKey.SETTINGS$SANDBOX_TYPE_DESCRIPTION)}
             </p>
-            <SandboxTypeSelector
-              testId="sandbox-type-selector"
-              name="sandbox-type-selector"
-              selectedSpecId={
-                selectedSandboxSpecId ?? settings.default_sandbox_spec_id
-              }
-              onSelectionChange={handleSandboxTypeChange}
-              wrapperClassName="w-full max-w-[680px]"
-            />
+            <div className="flex flex-col gap-4">
+              <SandboxTypeSelector
+                testId="sandbox-type-selector"
+                name="sandbox-type-selector"
+                selectedSpecId={
+                  selectedSandboxSpecId ?? settings.default_sandbox_spec_id
+                }
+                onSelectionChange={handleSandboxTypeChange}
+                wrapperClassName="w-full max-w-[680px]"
+              />
+              <SettingsInput
+                testId="fc-storage-size-input"
+                name="fc-storage-size-input"
+                type="number"
+                label={t(I18nKey.SETTINGS$STORAGE_SIZE)}
+                defaultValue={
+                  settings.default_fc_storage_size_gb?.toString() ||
+                  DEFAULT_SETTINGS.default_fc_storage_size_gb?.toString() ||
+                  "16"
+                }
+                onChange={checkIfFcStorageSizeHasChanged}
+                placeholder={t(I18nKey.SETTINGS$STORAGE_SIZE_GB)}
+                min={8}
+                step={1}
+                className="w-full max-w-[680px]"
+              />
+              <p className="text-xs text-[#A3A3A3]">
+                {t(I18nKey.SETTINGS$STORAGE_SIZE_DESCRIPTION)}
+              </p>
+            </div>
           </div>
 
           {!settings?.v1_enabled && (

@@ -89,4 +89,6 @@ export type Settings = {
   sandbox_grouping_strategy?: SandboxGroupingStrategy;
   // Default sandbox spec to use when starting new conversations
   default_sandbox_spec_id?: string | null;
+  // Default storage size in GB for Firecracker sandboxes
+  default_fc_storage_size_gb?: number | null;
 };

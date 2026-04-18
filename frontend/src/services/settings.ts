@@ -36,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   v1_enabled: true,
   sandbox_grouping_strategy: "NO_GROUPING",
   default_sandbox_spec_id: null, // null means use the system default
+  default_fc_storage_size_gb: 16, // Default 16GB for Firecracker sandboxes
 };
 
 /**
