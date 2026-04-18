@@ -50,6 +50,7 @@ from openhands.app_server.sandbox.sandbox_models import (
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
+    SESSION_API_KEY_VARIABLE,
     SandboxService,
     SandboxServiceInjector,
 )
@@ -80,8 +81,7 @@ DEFAULT_DAEMON_SOCKET = '/var/run/oh-firecracker-manager/oh-firecracker.sock'
 # Default VM subnet (must match daemon's default)
 DEFAULT_VM_SUBNET = '172.16.0.0/30'
 
-# Environment variable names for agent-server configuration
-SESSION_API_KEY_VARIABLE = 'OH_SESSION_API_KEY'
+# Environment variable name for webhook callback
 WEBHOOK_CALLBACK_VARIABLE = 'WEBHOOK_CALLBACK_URL'
 
 # Default exposed ports for Firecracker sandboxes (beyond AGENT_SERVER and VSCODE)
