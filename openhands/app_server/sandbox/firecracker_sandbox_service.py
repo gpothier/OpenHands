@@ -444,10 +444,11 @@ class FirecrackerSandboxService(SandboxService):
             return None
 
         vm = FirecrackerVM.from_daemon_response(vm_data)
-        # Restore sandbox_spec_id, working_dir, and exposed_ports from cache
+        # Restore locally-stored fields from cache
         if sandbox_id in self._vms:
             cached = self._vms[sandbox_id]
             vm.sandbox_spec_id = cached.sandbox_spec_id
+            vm.session_api_key = cached.session_api_key
             vm.working_dir = cached.working_dir
             vm.exposed_ports = cached.exposed_ports
         self._ensure_default_exposed_ports(vm)
@@ -665,6 +666,7 @@ class FirecrackerSandboxService(SandboxService):
             if vm.vm_id in self._vms:
                 cached = self._vms[vm.vm_id]
                 vm.sandbox_spec_id = cached.sandbox_spec_id
+                vm.session_api_key = cached.session_api_key
                 vm.working_dir = cached.working_dir
                 vm.exposed_ports = cached.exposed_ports
             self._ensure_default_exposed_ports(vm)
