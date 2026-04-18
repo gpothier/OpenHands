@@ -256,6 +256,10 @@ class FirecrackerVM:
         port_mappings_raw = data.get('port_mappings') or {}
         port_mappings = {int(k): v for k, v in port_mappings_raw.items()}
 
+        # Extract session_api_key from env_vars if available
+        env_vars = data.get('env_vars') or {}
+        session_api_key = env_vars.get(SESSION_API_KEY_VARIABLE)
+
         return cls(
             vm_id=data['vm_id'],
             guest_ip=data.get('guest_ip'),
@@ -267,6 +271,7 @@ class FirecrackerVM:
             status=data.get('status', 'unknown'),
             created_at=created_at,
             port_mappings=port_mappings,
+            session_api_key=session_api_key,
         )
 
     def to_sandbox_status(self) -> SandboxStatus:
