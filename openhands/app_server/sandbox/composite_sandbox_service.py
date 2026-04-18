@@ -280,7 +280,7 @@ class CompositeSandboxServiceInjector(SandboxServiceInjector):
         firecracker_service: SandboxService | None = None
         daemon_socket = os.environ.get(
             'OH_FIRECRACKER_MANAGER_SOCKET',
-            '/var/run/oh-firecracker-manager/oh-firecracker.sock',
+            '/var/run/fcvmd/fcvmd.sock',
         )
         if os.path.exists(daemon_socket):
             try:

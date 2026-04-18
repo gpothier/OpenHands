@@ -5,13 +5,13 @@ to run isolated microVMs instead of Docker containers. Firecracker provides
 hardware-level isolation using KVM while maintaining fast startup times
 (~125ms) and low memory overhead (<5 MiB per VM).
 
-This implementation is a client to the external oh-firecracker-manager daemon,
+This implementation is a client to the external fcvmd daemon,
 which handles VM lifecycle, networking, and kernel/rootfs building. The daemon
 runs on the host and manages VMs that persist across OpenHands container restarts.
 
 Requirements:
-- oh-firecracker-manager daemon running on host
-- Socket mounted at OH_FIRECRACKER_MANAGER_SOCKET (default: /var/run/oh-firecracker-manager/oh-firecracker.sock)
+- fcvmd daemon running on host
+- Socket mounted at OH_FIRECRACKER_MANAGER_SOCKET (default: /var/run/fcvmd/fcvmd.sock)
 
 Architecture:
 - This service communicates with the daemon via Unix socket
@@ -76,7 +76,7 @@ _logger = logging.getLogger(__name__)
 
 
 # Default daemon socket path
-DEFAULT_DAEMON_SOCKET = '/var/run/oh-firecracker-manager/oh-firecracker.sock'
+DEFAULT_DAEMON_SOCKET = '/var/run/fcvmd/fcvmd.sock'
 
 # Default VM subnet (must match daemon's default)
 DEFAULT_VM_SUBNET = '172.16.0.0/30'
@@ -125,7 +125,7 @@ def _compute_host_ip(vm_subnet: str) -> str:
 
 
 class DaemonClient:
-    """Client for communicating with the oh-firecracker-manager daemon."""
+    """Client for communicating with the fcvmd daemon."""
 
     def __init__(self, socket_path: str):
         self.socket_path = socket_path
@@ -363,9 +363,8 @@ class FirecrackerVM:
 class FirecrackerSandboxService(SandboxService):
     """SandboxService implementation using Firecracker microVMs via daemon.
 
-    This service communicates with the oh-firecracker-manager daemon to manage
-    VMs. The daemon handles all low-level details (networking, kernel/rootfs
-    building, VM lifecycle).
+    This service communicates with the fcvmd daemon to manage VMs. The daemon
+    handles all low-level details (networking, kernel/rootfs building, VM lifecycle).
     """
 
     def __init__(
@@ -420,7 +419,7 @@ class FirecrackerSandboxService(SandboxService):
         if not os.path.exists(self.daemon_socket):
             raise SandboxError(
                 f'Daemon socket not found: {self.daemon_socket}. '
-                'Is oh-firecracker-manager running?'
+                'Is fcvmd running?'
             )
 
         try:

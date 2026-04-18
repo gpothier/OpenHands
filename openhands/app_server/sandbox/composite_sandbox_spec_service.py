@@ -128,7 +128,7 @@ class CompositeSandboxSpecServiceInjector(SandboxSpecServiceInjector, OpenHandsM
             # The daemon manages kernel/rootfs building on the host
             daemon_socket = os.environ.get(
                 'OH_FIRECRACKER_MANAGER_SOCKET',
-                '/var/run/oh-firecracker-manager/oh-firecracker.sock',
+                '/var/run/fcvmd/fcvmd.sock',
             )
             daemon_available = os.path.exists(daemon_socket)
 
