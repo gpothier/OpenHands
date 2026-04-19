@@ -25,9 +25,11 @@ class OssAppLifespanService(AppLifespanService):
         if self.run_alembic_on_startup:
             self.run_alembic()
 
-        # Initialize sandbox registry if in registry/composite mode
-        sandbox_type = os.environ.get('SANDBOX_TYPE', '')
-        if sandbox_type in ('composite', 'registry'):
+        # Always initialize sandbox registry - it provides all available sandbox types
+        # (Docker, Firecracker when available, etc.)
+        # Only skip if explicitly in single-sandbox modes (remote, process)
+        sandbox_type = os.environ.get('SANDBOX_TYPE', '').lower()
+        if sandbox_type not in ('remote', 'process', 'local'):
             await self._init_sandbox_registry()
 
         return self

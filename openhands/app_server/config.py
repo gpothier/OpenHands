@@ -244,11 +244,9 @@ def config_from_env() -> AppServerConfig:
 
     if config.sandbox is None:
         # OH_SANDBOX_TYPE controls sandbox service selection
-        # Note: This is different from RUNTIME which controls the agent runtime
-        # OH_SANDBOX_TYPE options: docker, composite, remote, process
-        # Note: Use 'composite' for Firecracker support - it allows selecting
-        # between Docker and Firecracker per-conversation. Firecracker config
-        # is read from FIRECRACKER_* env vars by the service itself.
+        # Most modes use the sandbox registry which provides all available types
+        # (Docker, Firecracker when daemon is present, etc.)
+        # Special modes: remote, process/local - these bypass the registry
         sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
         # Fall back to RUNTIME for backward compatibility
         if not sandbox_type:
@@ -261,16 +259,9 @@ def config_from_env() -> AppServerConfig:
             )
         elif sandbox_type in ('local', 'process'):
             config.sandbox = ProcessSandboxServiceInjector()
-        elif sandbox_type in ('composite', 'registry'):
-            # Registry mode: supports all available sandbox types
-            # (Docker, Firecracker, etc.) - users can select per-conversation via UI
-            # The registry is initialized at startup via the lifespan service
-            # We still set up the old injectors for backward compatibility with
-            # code that hasn't migrated to the registry yet
-            config.sandbox = DockerSandboxServiceInjector()
-            config.sandbox_spec = DockerSandboxSpecServiceInjector()
         else:
-            # Default to Docker
+            # Default: use Docker injectors for backward compatibility
+            # The registry (initialized at startup) provides multi-type support
             # Support legacy environment variables for Docker sandbox configuration
             docker_sandbox_kwargs: dict = {}
             if os.getenv('SANDBOX_HOST_PORT'):
@@ -335,11 +326,9 @@ def config_from_env() -> AppServerConfig:
             config.sandbox_spec = RemoteSandboxSpecServiceInjector()
         elif sandbox_type in ('local', 'process'):
             config.sandbox_spec = ProcessSandboxSpecServiceInjector()
-        elif sandbox_type in ('composite', 'registry'):
-            # Registry/composite mode: specs are provided by the registry
-            # For backward compatibility, also set up Docker spec service
-            config.sandbox_spec = DockerSandboxSpecServiceInjector()
         else:
+            # Default: Docker spec service for backward compatibility
+            # The registry (if initialized) overrides via depends_sandbox_spec_service
             config.sandbox_spec = DockerSandboxSpecServiceInjector()
 
     if config.app_conversation_info is None:
