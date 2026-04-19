@@ -273,19 +273,21 @@ class SandboxRegistry:
         poll_interval: int = 2,
         httpx_client: httpx.AsyncClient | None = None,
     ) -> SandboxInfo:
-        """Wait for a sandbox to reach RUNNING status.
+        """Wait for a sandbox to reach RUNNING status with an alive agent server.
 
         Args:
             sandbox_id: The sandbox ID to wait for
             timeout: Maximum time to wait in seconds
             poll_interval: Time between status checks in seconds
-            httpx_client: Optional httpx client for health checks
+            httpx_client: Optional httpx client for agent server health checks.
+                If provided, will verify the agent server /alive endpoint responds
+                before returning.
 
         Returns:
-            SandboxInfo with RUNNING status
+            SandboxInfo with RUNNING status and verified agent server
 
         Raises:
-            RuntimeError: If sandbox not found, enters ERROR state, or times out
+            SandboxError: If sandbox not found, enters ERROR state, or times out
         """
         from openhands.app_server.errors import SandboxError
 
@@ -299,11 +301,33 @@ class SandboxRegistry:
                 raise SandboxError(f'Sandbox entered error state: {sandbox_id}')
 
             if sandbox.status == SandboxStatus.RUNNING:
-                return sandbox
+                # Optionally verify agent server is alive to avoid race conditions
+                # where sandbox reports RUNNING but agent server isn't ready yet
+                if httpx_client and sandbox.exposed_urls:
+                    if await self._check_agent_server_alive(sandbox, httpx_client):
+                        return sandbox
+                    # Agent server not ready yet, continue polling
+                else:
+                    return sandbox
 
             await asyncio.sleep(poll_interval)
 
-        raise SandboxError(f'Timeout waiting for sandbox {sandbox_id} to start')
+        raise SandboxError(f'Sandbox failed to start within {timeout}s: {sandbox_id}')
+
+    async def _check_agent_server_alive(
+        self, sandbox: SandboxInfo, httpx_client: httpx.AsyncClient
+    ) -> bool:
+        """Check if the agent server is responding to health checks."""
+        for url in sandbox.exposed_urls:
+            if url.name == 'agent':
+                try:
+                    response = await httpx_client.get(
+                        f'{url.url}/alive', timeout=5.0
+                    )
+                    return response.status_code == 200
+                except Exception:
+                    return False
+        return False
 
 
 @asynccontextmanager
