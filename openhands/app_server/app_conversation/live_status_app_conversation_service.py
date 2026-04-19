@@ -69,9 +69,7 @@ from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxSer
 from openhands.app_server.sandbox.firecracker_sandbox_service import (
     FirecrackerSandboxService,
 )
-from openhands.app_server.sandbox.sandbox_service_registry import (
-    SandboxServiceRegistry,
-)
+from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     FirecrackerSandboxStartParams,
@@ -1030,10 +1028,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         if sandbox_spec and sandbox_spec.type == SandboxType.FIRECRACKER:
             # Firecracker sandbox - get the per-VM gateway IP from the daemon
             fc_service: FirecrackerSandboxService | None = None
-            if isinstance(self.sandbox_service, SandboxServiceRegistry):
-                svc = self.sandbox_service.get_service_by_type(SandboxType.FIRECRACKER)
-                if isinstance(svc, FirecrackerSandboxService):
-                    fc_service = svc
+            if isinstance(self.sandbox_service, SandboxRegistry):
+                fc_sandbox = self.sandbox_service.get(SandboxType.FIRECRACKER)
+                # The adapter wraps the actual service
+                if fc_sandbox and hasattr(fc_sandbox, 'service'):
+                    if isinstance(fc_sandbox.service, FirecrackerSandboxService):
+                        fc_service = fc_sandbox.service
             elif isinstance(self.sandbox_service, FirecrackerSandboxService):
                 fc_service = self.sandbox_service
 
@@ -2162,13 +2162,15 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # Extract sandbox services from registry or direct service
             docker_service: DockerSandboxService | None = None
             firecracker_service: FirecrackerSandboxService | None = None
-            if isinstance(sandbox_service, SandboxServiceRegistry):
-                docker_svc = sandbox_service.get_service_by_type(SandboxType.DOCKER)
-                if isinstance(docker_svc, DockerSandboxService):
-                    docker_service = docker_svc
-                fc_svc = sandbox_service.get_service_by_type(SandboxType.FIRECRACKER)
-                if isinstance(fc_svc, FirecrackerSandboxService):
-                    firecracker_service = fc_svc
+            if isinstance(sandbox_service, SandboxRegistry):
+                docker_sandbox = sandbox_service.get(SandboxType.DOCKER)
+                if docker_sandbox and hasattr(docker_sandbox, 'service'):
+                    if isinstance(docker_sandbox.service, DockerSandboxService):
+                        docker_service = docker_sandbox.service
+                fc_sandbox = sandbox_service.get(SandboxType.FIRECRACKER)
+                if fc_sandbox and hasattr(fc_sandbox, 'service'):
+                    if isinstance(fc_sandbox.service, FirecrackerSandboxService):
+                        firecracker_service = fc_sandbox.service
             elif isinstance(sandbox_service, DockerSandboxService):
                 docker_service = sandbox_service
             elif isinstance(sandbox_service, FirecrackerSandboxService):

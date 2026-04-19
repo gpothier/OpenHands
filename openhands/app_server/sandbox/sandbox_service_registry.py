@@ -1,296 +1,366 @@
-"""Sandbox service registry that routes to appropriate sandbox implementations.
+"""Sandbox registry that manages multiple sandbox implementations.
 
-This module provides a registry that manages multiple sandbox service implementations
-(Docker, Firecracker, Process, Remote) and routes operations to the appropriate
-service based on the sandbox spec type.
+This module provides the `SandboxRegistry` class that holds all available
+sandbox implementations and provides unified access to specs and operations.
 """
 
 import logging
+import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncGenerator
 
-from fastapi import Request
-
+from openhands.app_server.sandbox.sandbox import Sandbox, SandboxAdapter
 from openhands.app_server.sandbox.sandbox_models import (
     SandboxInfo,
     SandboxPage,
     SandboxStartParams,
 )
-from openhands.app_server.sandbox.sandbox_service import (
-    SandboxService,
-    SandboxServiceInjector,
+from openhands.app_server.sandbox.sandbox_spec_models import (
+    SandboxSpecInfo,
+    SandboxSpecInfoPage,
+    SandboxType,
 )
-from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
-from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
-from openhands.app_server.services.injector import InjectorState
 
 _logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SandboxServiceRegistry(SandboxService):
-    """Registry that routes sandbox operations to the appropriate service.
+class SandboxRegistry:
+    """Registry that holds all available sandbox implementations.
 
-    This registry holds multiple sandbox service implementations and routes
-    operations based on the sandbox spec type. All sandbox types are always
-    available (if their dependencies are met).
+    This is NOT a Sandbox itself - it's a container that manages multiple
+    sandbox implementations and provides methods to access them.
     """
 
-    # Map of sandbox type to service implementation
-    services: dict[SandboxType, SandboxService] = field(default_factory=dict)
-    # Default service to use when spec type is unknown
+    # All registered sandbox implementations
+    sandboxes: dict[SandboxType, Sandbox] = field(default_factory=dict)
+    # Default type when none is specified
     default_type: SandboxType = SandboxType.DOCKER
-    # Service to look up spec types
-    sandbox_spec_service: SandboxSpecService | None = None
-    # Track which service owns which sandbox (sandbox_id -> type)
-    _sandbox_ownership: dict[str, SandboxType] = field(default_factory=dict)
+    # Cache: sandbox_id -> type (to avoid searching all sandboxes)
+    _ownership: dict[str, SandboxType] = field(default_factory=dict)
 
-    def register(self, sandbox_type: SandboxType, service: SandboxService) -> None:
-        """Register a sandbox service for a specific type."""
-        self.services[sandbox_type] = service
-        _logger.info(f'Registered {type(service).__name__} for {sandbox_type.value}')
+    def register(self, sandbox: Sandbox) -> None:
+        """Register a sandbox implementation."""
+        self.sandboxes[sandbox.sandbox_type] = sandbox
+        _logger.info(f'Registered {type(sandbox).__name__} for {sandbox.sandbox_type.value}')
 
-    def get_service_by_type(self, sandbox_type: SandboxType) -> SandboxService | None:
-        """Get a registered service by type, or None if not registered."""
-        return self.services.get(sandbox_type)
+    def get(self, sandbox_type: SandboxType) -> Sandbox | None:
+        """Get a sandbox implementation by type."""
+        return self.sandboxes.get(sandbox_type)
 
-    def _get_service(self, sandbox_type: SandboxType) -> SandboxService:
-        """Get the service for a sandbox type."""
-        service = self.services.get(sandbox_type)
-        if service is None:
-            raise RuntimeError(
-                f'No sandbox service registered for type {sandbox_type.value}. '
-                f'Available types: {list(self.services.keys())}'
-            )
-        return service
+    @property
+    def available_types(self) -> list[SandboxType]:
+        """Return list of available sandbox types."""
+        return list(self.sandboxes.keys())
 
-    async def _get_type_for_spec(self, sandbox_spec_id: str | None) -> SandboxType:
-        """Determine the sandbox type from a spec ID."""
-        if sandbox_spec_id is None:
-            return self.default_type
+    # -------------------------------------------------------------------------
+    # Spec aggregation
+    # -------------------------------------------------------------------------
 
-        if self.sandbox_spec_service is None:
-            _logger.warning('No sandbox_spec_service, using default type')
-            return self.default_type
-
-        spec = await self.sandbox_spec_service.get_sandbox_spec(sandbox_spec_id)
-        if spec is None:
-            _logger.warning(f'Spec not found: {sandbox_spec_id}, using default type')
-            return self.default_type
-
-        return spec.type
-
-    async def search_sandboxes(
+    async def search_all_specs(
         self, page_id: str | None = None, limit: int = 100
-    ) -> SandboxPage:
-        """Search sandboxes across all registered services."""
-        all_items: list[SandboxInfo] = []
+    ) -> SandboxSpecInfoPage:
+        """Search specs across all sandbox types."""
+        all_items: list[SandboxSpecInfo] = []
 
-        for sandbox_type, service in self.services.items():
+        for sandbox in self.sandboxes.values():
             try:
-                page = await service.search_sandboxes(page_id, limit)
+                page = await sandbox.search_specs(page_id, limit)
                 all_items.extend(page.items)
             except Exception as e:
-                _logger.warning(f'Error searching {sandbox_type.value} sandboxes: {e}')
+                _logger.warning(
+                    f'Error searching specs from {sandbox.sandbox_type.value}: {e}'
+                )
 
-        # Simple pagination - just return up to limit
+        return SandboxSpecInfoPage(
+            items=all_items[:limit],
+            next_page_id=None if len(all_items) <= limit else str(limit),
+        )
+
+    async def get_spec(self, spec_id: str) -> SandboxSpecInfo | None:
+        """Get a spec by ID, searching across all sandbox types."""
+        for sandbox in self.sandboxes.values():
+            try:
+                spec = await sandbox.get_spec(spec_id)
+                if spec is not None:
+                    return spec
+            except Exception as e:
+                _logger.debug(
+                    f'Error getting spec from {sandbox.sandbox_type.value}: {e}'
+                )
+        return None
+
+    async def get_sandbox_for_spec(self, spec_id: str) -> Sandbox | None:
+        """Get the sandbox implementation that provides a given spec."""
+        for sandbox in self.sandboxes.values():
+            try:
+                spec = await sandbox.get_spec(spec_id)
+                if spec is not None:
+                    return sandbox
+            except Exception:
+                pass
+        return None
+
+    async def get_default_spec(self) -> SandboxSpecInfo | None:
+        """Get the default spec from the default sandbox type."""
+        sandbox = self.sandboxes.get(self.default_type)
+        if sandbox:
+            return await sandbox.get_default_spec()
+        # Fall back to first available
+        for sandbox in self.sandboxes.values():
+            spec = await sandbox.get_default_spec()
+            if spec:
+                return spec
+        return None
+
+    # -------------------------------------------------------------------------
+    # Sandbox operations (aggregate across all types)
+    # -------------------------------------------------------------------------
+
+    async def search_all_sandboxes(
+        self, page_id: str | None = None, limit: int = 100
+    ) -> SandboxPage:
+        """Search sandboxes across all types."""
+        all_items: list[SandboxInfo] = []
+
+        for sandbox in self.sandboxes.values():
+            try:
+                page = await sandbox.search_sandboxes(page_id, limit)
+                all_items.extend(page.items)
+            except Exception as e:
+                _logger.warning(
+                    f'Error searching sandboxes from {sandbox.sandbox_type.value}: {e}'
+                )
+
         return SandboxPage(
             items=all_items[:limit],
             next_page_id=None if len(all_items) <= limit else str(limit),
         )
 
     async def get_sandbox(self, sandbox_id: str) -> SandboxInfo | None:
-        """Get a sandbox by ID, searching across all services."""
-        # Check ownership cache first
-        if sandbox_id in self._sandbox_ownership:
-            sandbox_type = self._sandbox_ownership[sandbox_id]
-            return await self.services[sandbox_type].get_sandbox(sandbox_id)
+        """Get a sandbox by ID, searching across all types."""
+        # Check cache first
+        if sandbox_id in self._ownership:
+            sandbox = self.sandboxes.get(self._ownership[sandbox_id])
+            if sandbox:
+                return await sandbox.get_sandbox(sandbox_id)
 
-        # Search all services
-        for sandbox_type, service in self.services.items():
+        # Search all
+        for sandbox in self.sandboxes.values():
             try:
-                result = await service.get_sandbox(sandbox_id)
-                if result is not None:
-                    self._sandbox_ownership[sandbox_id] = sandbox_type
-                    return result
-            except Exception as e:
-                _logger.debug(f'Error getting sandbox from {sandbox_type.value}: {e}')
-
+                info = await sandbox.get_sandbox(sandbox_id)
+                if info is not None:
+                    self._ownership[sandbox_id] = sandbox.sandbox_type
+                    return info
+            except Exception:
+                pass
         return None
 
     async def get_sandbox_by_session_api_key(
         self, session_api_key: str
     ) -> SandboxInfo | None:
-        """Get sandbox by session API key, searching across all services."""
-        for sandbox_type, service in self.services.items():
+        """Get a sandbox by session API key."""
+        for sandbox in self.sandboxes.values():
             try:
-                result = await service.get_sandbox_by_session_api_key(session_api_key)
-                if result is not None:
-                    self._sandbox_ownership[result.id] = sandbox_type
-                    return result
-            except Exception as e:
-                _logger.debug(
-                    f'Error getting sandbox by key from {sandbox_type.value}: {e}'
-                )
-
+                info = await sandbox.get_sandbox_by_session_api_key(session_api_key)
+                if info is not None:
+                    self._ownership[info.id] = sandbox.sandbox_type
+                    return info
+            except Exception:
+                pass
         return None
 
     async def start_sandbox(
-        self,
-        params: SandboxStartParams | None = None,
+        self, params: SandboxStartParams | None = None
     ) -> SandboxInfo:
-        """Start a sandbox using the appropriate service based on spec type."""
+        """Start a sandbox, routing to the appropriate implementation based on spec."""
         if params is None:
             params = SandboxStartParams()
 
-        sandbox_type = await self._get_type_for_spec(params.sandbox_spec_id)
+        # Determine which sandbox type to use
+        sandbox: Sandbox | None = None
+        if params.sandbox_spec_id:
+            sandbox = await self.get_sandbox_for_spec(params.sandbox_spec_id)
+
+        if sandbox is None:
+            sandbox = self.sandboxes.get(self.default_type)
+
+        if sandbox is None:
+            raise RuntimeError(
+                f'No sandbox available. Registered types: {self.available_types}'
+            )
+
         _logger.info(
             f'Starting sandbox: spec_id={params.sandbox_spec_id}, '
-            f'type={sandbox_type.value}'
+            f'type={sandbox.sandbox_type.value}'
         )
 
-        service = self._get_service(sandbox_type)
-        info = await service.start_sandbox(params)
-
-        # Track ownership
-        self._sandbox_ownership[info.id] = sandbox_type
+        info = await sandbox.start_sandbox(params)
+        self._ownership[info.id] = sandbox.sandbox_type
         return info
 
-    async def resume_sandbox(self, sandbox_id: str) -> bool:
-        """Resume a sandbox, routing to the owning service."""
-        if sandbox_id in self._sandbox_ownership:
-            sandbox_type = self._sandbox_ownership[sandbox_id]
-            return await self.services[sandbox_type].resume_sandbox(sandbox_id)
+    async def delete_sandbox(self, sandbox_id: str) -> bool:
+        """Delete a sandbox."""
+        # Check cache
+        if sandbox_id in self._ownership:
+            sandbox = self.sandboxes.get(self._ownership[sandbox_id])
+            if sandbox:
+                result = await sandbox.delete_sandbox(sandbox_id)
+                if result:
+                    del self._ownership[sandbox_id]
+                return result
 
-        # Try all services
-        for sandbox_type, service in self.services.items():
+        # Try all
+        for sandbox in self.sandboxes.values():
             try:
-                if await service.resume_sandbox(sandbox_id):
-                    self._sandbox_ownership[sandbox_id] = sandbox_type
+                if await sandbox.delete_sandbox(sandbox_id):
                     return True
             except Exception:
                 pass
-
         return False
 
     async def pause_sandbox(self, sandbox_id: str) -> bool:
-        """Pause a sandbox, routing to the owning service."""
-        if sandbox_id in self._sandbox_ownership:
-            sandbox_type = self._sandbox_ownership[sandbox_id]
-            return await self.services[sandbox_type].pause_sandbox(sandbox_id)
+        """Pause a sandbox."""
+        if sandbox_id in self._ownership:
+            sandbox = self.sandboxes.get(self._ownership[sandbox_id])
+            if sandbox:
+                return await sandbox.pause_sandbox(sandbox_id)
 
-        # Try all services
-        for sandbox_type, service in self.services.items():
+        for sandbox in self.sandboxes.values():
             try:
-                if await service.pause_sandbox(sandbox_id):
-                    self._sandbox_ownership[sandbox_id] = sandbox_type
+                if await sandbox.pause_sandbox(sandbox_id):
+                    self._ownership[sandbox_id] = sandbox.sandbox_type
                     return True
             except Exception:
                 pass
-
         return False
 
-    async def delete_sandbox(self, sandbox_id: str) -> bool:
-        """Delete a sandbox, routing to the owning service."""
-        if sandbox_id in self._sandbox_ownership:
-            sandbox_type = self._sandbox_ownership[sandbox_id]
-            result = await self.services[sandbox_type].delete_sandbox(sandbox_id)
-            if result:
-                del self._sandbox_ownership[sandbox_id]
-            return result
+    async def resume_sandbox(self, sandbox_id: str) -> bool:
+        """Resume a sandbox."""
+        if sandbox_id in self._ownership:
+            sandbox = self.sandboxes.get(self._ownership[sandbox_id])
+            if sandbox:
+                return await sandbox.resume_sandbox(sandbox_id)
 
-        # Try all services
-        for sandbox_type, service in self.services.items():
+        for sandbox in self.sandboxes.values():
             try:
-                if await service.delete_sandbox(sandbox_id):
+                if await sandbox.resume_sandbox(sandbox_id):
+                    self._ownership[sandbox_id] = sandbox.sandbox_type
                     return True
             except Exception:
                 pass
-
         return False
 
-    async def get_vscode_internal_url(self, short_sandbox_id: str) -> str | None:
-        """Get VS Code internal URL, searching across all services."""
-        for service in self.services.values():
-            try:
-                result = await service.get_vscode_internal_url(short_sandbox_id)
-                if result:
-                    return result
-            except Exception:
-                pass
-        return None
 
-    async def get_agent_server_internal_url(self, short_sandbox_id: str) -> str | None:
-        """Get agent-server internal URL, searching across all services."""
-        for service in self.services.values():
-            try:
-                result = await service.get_agent_server_internal_url(short_sandbox_id)
-                if result:
-                    return result
-            except Exception:
-                pass
-        return None
+@asynccontextmanager
+async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
+    """Create a SandboxRegistry with all available sandbox implementations.
 
+    This factory function creates adapters wrapping the legacy SandboxService
+    and SandboxSpecService implementations and registers them in the registry.
+    """
+    from openhands.app_server.sandbox.docker_sandbox_service import (
+        DockerSandboxService,
+        DockerSandboxServiceInjector,
+    )
+    from openhands.app_server.sandbox.docker_sandbox_spec_service import (
+        DockerSandboxSpecServiceInjector,
+    )
+    from openhands.app_server.sandbox.preset_sandbox_spec_service import (
+        PresetSandboxSpecService,
+    )
+    from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
+    from openhands.app_server.sandbox.sandbox_spec_service import (
+        DEFAULT_WORKING_DIR,
+        get_agent_server_image,
+    )
+    from openhands.app_server.services.injector import InjectorState
 
-class SandboxServiceRegistryInjector(SandboxServiceInjector):
-    """Injector that creates a registry with all available sandbox services."""
+    registry = SandboxRegistry()
+    state = InjectorState()
 
-    async def inject(
-        self, state: InjectorState, request: Request | None = None
-    ) -> AsyncGenerator[SandboxService, None]:
-        import os
+    # Build Docker sandbox adapter
+    docker_spec_injector = DockerSandboxSpecServiceInjector()
+    docker_service_injector = DockerSandboxServiceInjector()
 
-        from openhands.app_server.config import get_sandbox_spec_service
+    # Get Docker kwargs from environment
+    docker_kwargs: dict = {}
+    if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
+        docker_kwargs['startup_grace_seconds'] = int(
+            os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
+        )
+    if os.getenv('SANDBOX_PROXY_VSCODE'):
+        docker_kwargs['proxy_vscode'] = os.environ['SANDBOX_PROXY_VSCODE'].lower() in (
+            '1',
+            'true',
+            'yes',
+            'on',
+        )
+    if os.getenv('SANDBOX_PROXY_AGENT'):
+        docker_kwargs['proxy_agent'] = os.environ['SANDBOX_PROXY_AGENT'].lower() in (
+            '1',
+            'true',
+            'yes',
+            'on',
+        )
 
-        registry = SandboxServiceRegistry()
+    if docker_kwargs:
+        docker_service_injector = DockerSandboxServiceInjector(**docker_kwargs)
 
-        # Always try to register Docker service
+    try:
+        async for docker_spec_service in docker_spec_injector.inject(state, None):
+            async for docker_service in docker_service_injector.inject(state, None):
+                docker_adapter = SandboxAdapter(
+                    _sandbox_type=SandboxType.DOCKER,
+                    service=docker_service,
+                    spec_service=docker_spec_service,
+                )
+                registry.register(docker_adapter)
+                break
+            break
+    except Exception as e:
+        _logger.warning(f'Failed to initialize Docker sandbox: {e}')
+
+    # Build Firecracker sandbox adapter if daemon is available
+    daemon_socket = os.environ.get(
+        'OH_FIRECRACKER_MANAGER_SOCKET',
+        '/var/run/fcvmd/fcvmd.sock',
+    )
+    if os.path.exists(daemon_socket):
         try:
-            from openhands.app_server.sandbox.docker_sandbox_service import (
-                DockerSandboxServiceInjector,
+            from openhands.app_server.sandbox.firecracker_sandbox_service import (
+                FirecrackerSandboxService,
             )
 
-            docker_kwargs: dict = {}
-            if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
-                docker_kwargs['startup_grace_seconds'] = int(
-                    os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
-                )
-            if os.getenv('SANDBOX_PROXY_VSCODE'):
-                docker_kwargs['proxy_vscode'] = os.environ[
-                    'SANDBOX_PROXY_VSCODE'
-                ].lower() in ('1', 'true', 'yes', 'on')
-            if os.getenv('SANDBOX_PROXY_AGENT'):
-                docker_kwargs['proxy_agent'] = os.environ[
-                    'SANDBOX_PROXY_AGENT'
-                ].lower() in ('1', 'true', 'yes', 'on')
+            # Create Firecracker spec service with preset specs
+            fc_specs = [
+                SandboxSpecInfo(
+                    id='firecracker-vm',
+                    name='Firecracker microVM',
+                    type=SandboxType.FIRECRACKER,
+                    description='Lightweight microVM with hardware-level isolation',
+                    working_dir=DEFAULT_WORKING_DIR,
+                    kvm_enabled=True,
+                ),
+            ]
+            fc_spec_service = PresetSandboxSpecService(specs=fc_specs)
 
-            docker_injector = DockerSandboxServiceInjector(**docker_kwargs)
-            async for docker_service in docker_injector.inject(state, request):
-                registry.register(SandboxType.DOCKER, docker_service)
-                break
+            # Create Firecracker service
+            fc_service = FirecrackerSandboxService(
+                daemon_socket=daemon_socket,
+                sandbox_spec_service=fc_spec_service,
+            )
+            await fc_service.initialize()
+
+            fc_adapter = SandboxAdapter(
+                _sandbox_type=SandboxType.FIRECRACKER,
+                service=fc_service,
+                spec_service=fc_spec_service,
+            )
+            registry.register(fc_adapter)
+            _logger.info('Firecracker sandbox registered')
         except Exception as e:
-            _logger.warning(f'Failed to initialize Docker service: {e}')
+            _logger.warning(f'Failed to initialize Firecracker sandbox: {e}')
 
-        # Try to register Firecracker service if daemon is available
-        daemon_socket = os.environ.get(
-            'OH_FIRECRACKER_MANAGER_SOCKET',
-            '/var/run/fcvmd/fcvmd.sock',
-        )
-        if os.path.exists(daemon_socket):
-            try:
-                from openhands.app_server.sandbox.firecracker_sandbox_service import (
-                    FirecrackerSandboxServiceInjector,
-                )
-
-                fc_injector = FirecrackerSandboxServiceInjector()
-                async for fc_service in fc_injector.inject(state, request):
-                    registry.register(SandboxType.FIRECRACKER, fc_service)
-                    break
-                _logger.info('Firecracker service registered')
-            except Exception as e:
-                _logger.warning(f'Failed to initialize Firecracker service: {e}')
-
-        # Set up spec service for type lookup
-        async with get_sandbox_spec_service(state) as spec_service:
-            registry.sandbox_spec_service = spec_service
-            yield registry
+    yield registry

@@ -37,10 +37,12 @@ from openhands.app_server.pending_messages.pending_message_service import (
     PendingMessageService,
     PendingMessageServiceInjector,
 )
+from openhands.app_server.sandbox.sandbox import Sandbox
 from openhands.app_server.sandbox.sandbox_service import (
     SandboxService,
     SandboxServiceInjector,
 )
+from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.sandbox_spec_service import (
     SandboxSpecService,
     SandboxSpecServiceInjector,
@@ -143,6 +145,8 @@ class AppServerConfig(OpenHandsModel):
     event_callback: EventCallbackServiceInjector | None = None
     sandbox: SandboxServiceInjector | None = None
     sandbox_spec: SandboxSpecServiceInjector | None = None
+    # New unified sandbox registry (replaces sandbox + sandbox_spec when set)
+    sandbox_registry: SandboxRegistry | None = None
     app_conversation_info: AppConversationInfoServiceInjector | None = None
     app_conversation_start_task: AppConversationStartTaskServiceInjector | None = None
     app_conversation: AppConversationServiceInjector | None = None
@@ -254,14 +258,16 @@ def config_from_env() -> AppServerConfig:
             )
         elif sandbox_type in ('local', 'process'):
             config.sandbox = ProcessSandboxServiceInjector()
-        elif sandbox_type == 'composite' or sandbox_type == 'registry':
+        elif sandbox_type == 'registry':
             # Registry mode: supports all available sandbox types
             # (Docker, Firecracker, etc.) - users can select per-conversation via UI
-            from openhands.app_server.sandbox.sandbox_service_registry import (
-                SandboxServiceRegistryInjector,
+            # The registry is initialized at startup via the lifespan service
+            # For now, we still need the old injectors for backward compatibility
+            from openhands.app_server.sandbox.composite_sandbox_service import (
+                CompositeSandboxServiceInjector,
             )
 
-            config.sandbox = SandboxServiceRegistryInjector()
+            config.sandbox = CompositeSandboxServiceInjector()
         else:
             # Default to Docker
             # Support legacy environment variables for Docker sandbox configuration
@@ -414,6 +420,35 @@ def get_sandbox_spec_service(
     injector = get_global_config().sandbox_spec
     assert injector is not None
     return injector.context(state, request)
+
+
+def get_sandbox_registry() -> SandboxRegistry | None:
+    """Get the sandbox registry if configured.
+
+    The registry provides unified access to all sandbox types (Docker, Firecracker, etc.)
+    and their specs. Use this instead of separate sandbox_service and sandbox_spec_service
+    when you need to work with multiple sandbox types.
+    """
+    return get_global_config().sandbox_registry
+
+
+def get_sandbox(sandbox_type: 'SandboxType') -> Sandbox | None:
+    """Get a specific sandbox implementation by type.
+
+    Args:
+        sandbox_type: The type of sandbox to get (DOCKER, FIRECRACKER, etc.)
+
+    Returns:
+        The Sandbox implementation, or None if not available.
+    """
+    registry = get_sandbox_registry()
+    if registry is None:
+        return None
+    return registry.get(sandbox_type)
+
+
+# Import here to avoid circular import at module level
+from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
 
 
 def get_app_conversation_info_service(
