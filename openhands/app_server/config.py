@@ -254,15 +254,14 @@ def config_from_env() -> AppServerConfig:
             )
         elif sandbox_type in ('local', 'process'):
             config.sandbox = ProcessSandboxServiceInjector()
-        elif sandbox_type == 'composite':
-            # Composite mode: supports both Docker and Firecracker sandboxes
-            # Users can select sandbox type per-conversation via UI
-            # Firecracker config is read from FIRECRACKER_* env vars
-            from openhands.app_server.sandbox.composite_sandbox_service import (
-                CompositeSandboxServiceInjector,
+        elif sandbox_type == 'composite' or sandbox_type == 'registry':
+            # Registry mode: supports all available sandbox types
+            # (Docker, Firecracker, etc.) - users can select per-conversation via UI
+            from openhands.app_server.sandbox.sandbox_service_registry import (
+                SandboxServiceRegistryInjector,
             )
 
-            config.sandbox = CompositeSandboxServiceInjector()
+            config.sandbox = SandboxServiceRegistryInjector()
         else:
             # Default to Docker
             # Support legacy environment variables for Docker sandbox configuration

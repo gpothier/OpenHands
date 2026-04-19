@@ -65,12 +65,12 @@ from openhands.app_server.event_callback.set_title_callback_processor import (
 from openhands.app_server.pending_messages.pending_message_service import (
     PendingMessageService,
 )
-from openhands.app_server.sandbox.composite_sandbox_service import (
-    CompositeSandboxService,
-)
 from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxService
 from openhands.app_server.sandbox.firecracker_sandbox_service import (
     FirecrackerSandboxService,
+)
+from openhands.app_server.sandbox.sandbox_service_registry import (
+    SandboxServiceRegistry,
 )
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
@@ -1008,9 +1008,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
     async def _get_internal_url_for_sandbox(self, sandbox: SandboxInfo) -> str | None:
         """Get the internal URL for callbacks based on sandbox type.
 
-        This handles the case where CompositeSandboxService is used and the
-        sandbox could be either Docker or Firecracker. Each sandbox type needs
-        a different internal URL:
+        Different sandbox types need different internal URLs:
         - Docker: http://host.docker.internal:{port}
         - Firecracker: http://{per_vm_gateway_ip}:{port}
 
@@ -1032,11 +1030,10 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         if sandbox_spec and sandbox_spec.type == SandboxType.FIRECRACKER:
             # Firecracker sandbox - get the per-VM gateway IP from the daemon
             fc_service: FirecrackerSandboxService | None = None
-            if isinstance(self.sandbox_service, CompositeSandboxService):
-                if isinstance(
-                    self.sandbox_service.firecracker_service, FirecrackerSandboxService
-                ):
-                    fc_service = self.sandbox_service.firecracker_service
+            if isinstance(self.sandbox_service, SandboxServiceRegistry):
+                svc = self.sandbox_service.get_service_by_type(SandboxType.FIRECRACKER)
+                if isinstance(svc, FirecrackerSandboxService):
+                    fc_service = svc
             elif isinstance(self.sandbox_service, FirecrackerSandboxService):
                 fc_service = self.sandbox_service
 
@@ -2162,16 +2159,16 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # with the external web_url (e.g., self-signed certs) do not apply.
             internal_web_url: str | None = None
 
-            # Extract sandbox services from composite or direct service
+            # Extract sandbox services from registry or direct service
             docker_service: DockerSandboxService | None = None
             firecracker_service: FirecrackerSandboxService | None = None
-            if isinstance(sandbox_service, CompositeSandboxService):
-                if isinstance(sandbox_service.docker_service, DockerSandboxService):
-                    docker_service = sandbox_service.docker_service
-                if isinstance(
-                    sandbox_service.firecracker_service, FirecrackerSandboxService
-                ):
-                    firecracker_service = sandbox_service.firecracker_service
+            if isinstance(sandbox_service, SandboxServiceRegistry):
+                docker_svc = sandbox_service.get_service_by_type(SandboxType.DOCKER)
+                if isinstance(docker_svc, DockerSandboxService):
+                    docker_service = docker_svc
+                fc_svc = sandbox_service.get_service_by_type(SandboxType.FIRECRACKER)
+                if isinstance(fc_svc, FirecrackerSandboxService):
+                    firecracker_service = fc_svc
             elif isinstance(sandbox_service, DockerSandboxService):
                 docker_service = sandbox_service
             elif isinstance(sandbox_service, FirecrackerSandboxService):
