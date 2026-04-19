@@ -2121,10 +2121,16 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             get_httpx_client,
             get_jwt_service,
             get_pending_message_service,
+            get_sandbox_registry,
             get_sandbox_service,
             get_sandbox_spec_service,
             get_user_context,
         )
+
+        config = get_global_config()
+
+        # Check if registry is available (preferred)
+        registry = get_sandbox_registry()
 
         async with (
             get_user_context(state, request) as user_context,
@@ -2147,7 +2153,11 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 access_token_hard_timeout = timedelta(
                     seconds=float(self.access_token_hard_timeout)
                 )
-            config = get_global_config()
+
+            # Use registry if available, otherwise fall back to individual services
+            effective_sandbox_service: SandboxService | SandboxRegistry = (
+                registry if registry is not None else sandbox_service
+            )
 
             # If no web url has been set and we are using docker, we can use host.docker.internal
             web_url = config.web_url
@@ -2163,12 +2173,12 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # Extract sandbox services from registry or direct service
             docker_service: DockerSandboxService | None = None
             firecracker_service: FirecrackerSandboxService | None = None
-            if isinstance(sandbox_service, SandboxRegistry):
-                docker_sandbox = sandbox_service.get(SandboxType.DOCKER)
+            if registry is not None:
+                docker_sandbox = registry.get(SandboxType.DOCKER)
                 if docker_sandbox and hasattr(docker_sandbox, 'service'):
                     if isinstance(docker_sandbox.service, DockerSandboxService):
                         docker_service = docker_sandbox.service
-                fc_sandbox = sandbox_service.get(SandboxType.FIRECRACKER)
+                fc_sandbox = registry.get(SandboxType.FIRECRACKER)
                 if fc_sandbox and hasattr(fc_sandbox, 'service'):
                     if isinstance(fc_sandbox.service, FirecrackerSandboxService):
                         firecracker_service = fc_sandbox.service
@@ -2211,7 +2221,7 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             yield LiveStatusAppConversationService(
                 init_git_in_empty_workspace=self.init_git_in_empty_workspace,
                 user_context=user_context,
-                sandbox_service=sandbox_service,
+                sandbox_service=effective_sandbox_service,
                 sandbox_spec_service=sandbox_spec_service,
                 app_conversation_info_service=app_conversation_info_service,
                 app_conversation_start_task_service=app_conversation_start_task_service,

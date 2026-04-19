@@ -524,9 +524,25 @@ def depends_event_callback_service():
 
 
 def depends_sandbox_service():
-    injector = get_global_config().sandbox
-    assert injector is not None
-    return Depends(injector.depends)
+    """Return a FastAPI dependency for sandbox operations.
+
+    Returns the registry if available (preferred), otherwise falls back to the
+    old per-request injector.
+    """
+
+    async def _get_sandbox_service():
+        # Prefer registry if available
+        registry = get_sandbox_registry()
+        if registry is not None:
+            yield registry
+        else:
+            # Fall back to old injector
+            injector = get_global_config().sandbox
+            assert injector is not None
+            async with injector.context(InjectorState(), None) as service:
+                yield service
+
+    return Depends(_get_sandbox_service)
 
 
 def depends_sandbox_spec_service():

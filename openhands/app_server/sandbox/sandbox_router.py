@@ -1,7 +1,7 @@
 """Runtime Containers router for OpenHands App Server."""
 
 import logging
-from typing import Annotated, cast
+from typing import Annotated, Union, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import APIKeyHeader
@@ -18,14 +18,19 @@ from openhands.app_server.sandbox.sandbox_models import (
 from openhands.app_server.sandbox.sandbox_service import (
     SandboxService,
 )
+from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.session_auth import validate_session_key
 from openhands.app_server.user.auth_user_context import AuthUserContext
 from openhands.app_server.utils.dependencies import get_dependencies
 from openhands.server.user_auth import get_user_settings_store
+
 from openhands.server.user_auth.user_auth import (
     get_for_user as get_user_auth_for_user,
 )
 from openhands.storage.settings.settings_store import SettingsStore
+
+# Type alias for sandbox service (either old service or new registry)
+SandboxServiceType = Union[SandboxService, SandboxRegistry]
 
 _logger = logging.getLogger(__name__)
 
@@ -49,7 +54,7 @@ async def search_sandboxes(
         int,
         Query(title='The max number of results in the page', gt=0, le=100),
     ] = 100,
-    sandbox_service: SandboxService = sandbox_service_dependency,
+    sandbox_service: SandboxServiceType = sandbox_service_dependency,
 ) -> SandboxPage:
     """Search / list sandboxes owned by the current user."""
     return await sandbox_service.search_sandboxes(page_id=page_id, limit=limit)
@@ -58,7 +63,7 @@ async def search_sandboxes(
 @router.get('')
 async def batch_get_sandboxes(
     id: Annotated[list[str], Query()],
-    sandbox_service: SandboxService = sandbox_service_dependency,
+    sandbox_service: SandboxServiceType = sandbox_service_dependency,
 ) -> list[SandboxInfo | None]:
     """Get a batch of sandboxes given their ids, returning null for any missing."""
     if len(id) > 100:
@@ -76,7 +81,7 @@ async def batch_get_sandboxes(
 @router.post('')
 async def start_sandbox(
     sandbox_spec_id: str | None = None,
-    sandbox_service: SandboxService = sandbox_service_dependency,
+    sandbox_service: SandboxServiceType = sandbox_service_dependency,
     settings_store: SettingsStore | None = Depends(get_user_settings_store),
 ) -> SandboxInfo:
     # Note: SSH public keys from settings are not currently passed to sandbox
@@ -89,7 +94,7 @@ async def start_sandbox(
 @router.post('/{sandbox_id}/pause', responses={404: {'description': 'Item not found'}})
 async def pause_sandbox(
     sandbox_id: str,
-    sandbox_service: SandboxService = sandbox_service_dependency,
+    sandbox_service: SandboxServiceType = sandbox_service_dependency,
 ) -> Success:
     exists = await sandbox_service.pause_sandbox(sandbox_id)
     if not exists:
@@ -100,7 +105,7 @@ async def pause_sandbox(
 @router.post('/{sandbox_id}/resume', responses={404: {'description': 'Item not found'}})
 async def resume_sandbox(
     sandbox_id: str,
-    sandbox_service: SandboxService = sandbox_service_dependency,
+    sandbox_service: SandboxServiceType = sandbox_service_dependency,
 ) -> Success:
     exists = await sandbox_service.resume_sandbox(sandbox_id)
     if not exists:
@@ -111,7 +116,7 @@ async def resume_sandbox(
 @router.delete('/{id}', responses={404: {'description': 'Item not found'}})
 async def delete_sandbox(
     sandbox_id: str,
-    sandbox_service: SandboxService = sandbox_service_dependency,
+    sandbox_service: SandboxServiceType = sandbox_service_dependency,
 ) -> Success:
     exists = await sandbox_service.delete_sandbox(sandbox_id)
     if not exists:
