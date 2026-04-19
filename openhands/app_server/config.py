@@ -558,9 +558,49 @@ def depends_sandbox_service():
 
 
 def depends_sandbox_spec_service():
-    injector = get_global_config().sandbox_spec
-    assert injector is not None
-    return Depends(injector.depends)
+    """Return a FastAPI dependency for sandbox spec operations.
+
+    Returns specs from the registry if available (which includes all sandbox types),
+    otherwise falls back to the old per-request injector.
+    """
+    from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfoPage
+
+    class RegistrySpecAdapter:
+        """Adapts SandboxRegistry to SandboxSpecService interface for spec operations."""
+
+        def __init__(self, registry: SandboxRegistry):
+            self._registry = registry
+
+        async def search_sandbox_specs(
+            self, page_id: str | None = None, limit: int = 100
+        ) -> SandboxSpecInfoPage:
+            return await self._registry.search_all_specs(page_id=page_id, limit=limit)
+
+        async def get_sandbox_spec(self, spec_id: str) -> 'SandboxSpecInfo | None':
+            from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
+
+            return await self._registry.get_spec(spec_id)
+
+        async def batch_get_sandbox_specs(
+            self, spec_ids: list[str]
+        ) -> list['SandboxSpecInfo | None']:
+            from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
+
+            return [await self.get_sandbox_spec(sid) for sid in spec_ids]
+
+    async def _get_sandbox_spec_service():
+        # Prefer registry if available (includes all sandbox types)
+        registry = get_sandbox_registry()
+        if registry is not None:
+            yield RegistrySpecAdapter(registry)
+        else:
+            # Fall back to old injector
+            injector = get_global_config().sandbox_spec
+            assert injector is not None
+            async with injector.context(InjectorState(), None) as service:
+                yield service
+
+    return Depends(_get_sandbox_spec_service)
 
 
 def depends_app_conversation_info_service():
