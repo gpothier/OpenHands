@@ -1,8 +1,9 @@
 """Configuration for the OpenHands App Server."""
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncContextManager
+from typing import AsyncContextManager, AsyncGenerator
 
 import httpx
 from fastapi import Depends, Request
@@ -193,12 +194,6 @@ def config_from_env() -> AppServerConfig:
     from openhands.app_server.event_callback.sql_event_callback_service import (
         SQLEventCallbackServiceInjector,
     )
-    from openhands.app_server.sandbox.docker_sandbox_service import (
-        DockerSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.docker_sandbox_spec_service import (
-        DockerSandboxSpecServiceInjector,
-    )
     from openhands.app_server.user.auth_user_context import (
         AuthUserContextInjector,
     )
@@ -230,11 +225,9 @@ def config_from_env() -> AppServerConfig:
     if config.event_callback is None:
         config.event_callback = SQLEventCallbackServiceInjector()
 
-    if config.sandbox is None:
-        # Fallback injectors used when registry is not yet initialized
-        # The registry (initialized at startup) provides all available sandbox types
-        config.sandbox = DockerSandboxServiceInjector()
-        config.sandbox_spec = DockerSandboxSpecServiceInjector()
+    # Note: config.sandbox and config.sandbox_spec are legacy injectors
+    # The registry (initialized at startup) provides all sandbox types
+    # These may remain None - the depends_* functions prefer the registry
 
     if config.app_conversation_info is None:
         config.app_conversation_info = SQLAppConversationInfoServiceInjector()
@@ -298,20 +291,48 @@ def get_event_callback_service(
     return injector.context(state, request)
 
 
-def get_sandbox_service(
+@asynccontextmanager
+async def get_sandbox_service(
     state: InjectorState, request: Request | None = None
-) -> AsyncContextManager[SandboxService]:
-    injector = get_global_config().sandbox
-    assert injector is not None
-    return injector.context(state, request)
+) -> AsyncGenerator[SandboxRegistry, None]:
+    """Get the sandbox registry for sandbox operations.
+
+    This function is maintained for API compatibility - it returns the registry
+    which provides access to all available sandbox types.
+    """
+    registry = get_sandbox_registry()
+    if registry is None:
+        raise RuntimeError('Sandbox registry not initialized')
+    yield registry
 
 
-def get_sandbox_spec_service(
+@asynccontextmanager
+async def get_sandbox_spec_service(
     state: InjectorState, request: Request | None = None
-) -> AsyncContextManager[SandboxSpecService]:
-    injector = get_global_config().sandbox_spec
-    assert injector is not None
-    return injector.context(state, request)
+) -> AsyncGenerator[SandboxSpecService, None]:
+    """Get the sandbox spec service for spec operations.
+
+    This function is maintained for API compatibility - it returns an adapter
+    that provides specs from all registered sandbox types.
+    """
+    registry = get_sandbox_registry()
+    if registry is None:
+        raise RuntimeError('Sandbox registry not initialized')
+
+    class RegistrySpecAdapter:
+        def __init__(self, registry: SandboxRegistry):
+            self._registry = registry
+
+        async def search_sandbox_specs(self, page_id=None, limit=100):
+            return await self._registry.search_all_specs(page_id=page_id, limit=limit)
+
+        async def get_sandbox_spec(self, spec_id: str):
+            return await self._registry.get_spec(spec_id)
+
+        async def batch_get_sandbox_specs(self, spec_ids: list[str]):
+            return [await self.get_sandbox_spec(sid) for sid in spec_ids]
+
+    yield RegistrySpecAdapter(registry)  # type: ignore
 
 
 def get_sandbox_registry() -> SandboxRegistry | None:
@@ -432,21 +453,14 @@ def depends_event_callback_service():
 def depends_sandbox_service():
     """Return a FastAPI dependency for sandbox operations.
 
-    Returns the registry if available (preferred), otherwise falls back to the
-    old per-request injector.
+    Returns the registry which provides all available sandbox types.
     """
 
     async def _get_sandbox_service():
-        # Prefer registry if available
         registry = get_sandbox_registry()
-        if registry is not None:
-            yield registry
-        else:
-            # Fall back to old injector
-            injector = get_global_config().sandbox
-            assert injector is not None
-            async with injector.context(InjectorState(), None) as service:
-                yield service
+        if registry is None:
+            raise RuntimeError('Sandbox registry not initialized')
+        yield registry
 
     return Depends(_get_sandbox_service)
 
@@ -454,8 +468,7 @@ def depends_sandbox_service():
 def depends_sandbox_spec_service():
     """Return a FastAPI dependency for sandbox spec operations.
 
-    Returns specs from the registry if available (which includes all sandbox types),
-    otherwise falls back to the old per-request injector.
+    Returns specs from the registry which includes all available sandbox types.
     """
     from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfoPage
 
@@ -483,16 +496,10 @@ def depends_sandbox_spec_service():
             return [await self.get_sandbox_spec(sid) for sid in spec_ids]
 
     async def _get_sandbox_spec_service():
-        # Prefer registry if available (includes all sandbox types)
         registry = get_sandbox_registry()
-        if registry is not None:
-            yield RegistrySpecAdapter(registry)
-        else:
-            # Fall back to old injector
-            injector = get_global_config().sandbox_spec
-            assert injector is not None
-            async with injector.context(InjectorState(), None) as service:
-                yield service
+        if registry is None:
+            raise RuntimeError('Sandbox registry not initialized')
+        yield RegistrySpecAdapter(registry)
 
     return Depends(_get_sandbox_spec_service)
 
