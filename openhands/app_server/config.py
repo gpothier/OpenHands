@@ -199,18 +199,6 @@ def config_from_env() -> AppServerConfig:
     from openhands.app_server.sandbox.docker_sandbox_spec_service import (
         DockerSandboxSpecServiceInjector,
     )
-    from openhands.app_server.sandbox.process_sandbox_service import (
-        ProcessSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.process_sandbox_spec_service import (
-        ProcessSandboxSpecServiceInjector,
-    )
-    from openhands.app_server.sandbox.remote_sandbox_service import (
-        RemoteSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.remote_sandbox_spec_service import (
-        RemoteSandboxSpecServiceInjector,
-    )
     from openhands.app_server.user.auth_user_context import (
         AuthUserContextInjector,
     )
@@ -243,26 +231,10 @@ def config_from_env() -> AppServerConfig:
         config.event_callback = SQLEventCallbackServiceInjector()
 
     if config.sandbox is None:
-        # OH_SANDBOX_TYPE: special operational modes that bypass the registry
-        # - 'remote': connect to external sandbox service
-        # - 'process'/'local': run sandbox as local process (testing)
-        # Default: use registry which provides all available sandbox types
-        sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
-
-        if sandbox_type == 'remote':
-            config.sandbox = RemoteSandboxServiceInjector(
-                api_key=os.environ['SANDBOX_API_KEY'],
-                api_url=os.environ['SANDBOX_REMOTE_RUNTIME_API_URL'],
-            )
-            config.sandbox_spec = RemoteSandboxSpecServiceInjector()
-        elif sandbox_type in ('local', 'process'):
-            config.sandbox = ProcessSandboxServiceInjector()
-            config.sandbox_spec = ProcessSandboxSpecServiceInjector()
-        else:
-            # Default: Docker injectors as fallback when registry is not ready
-            # The registry (initialized at startup) handles all sandbox types
-            config.sandbox = DockerSandboxServiceInjector()
-            config.sandbox_spec = DockerSandboxSpecServiceInjector()
+        # Fallback injectors used when registry is not yet initialized
+        # The registry (initialized at startup) provides all available sandbox types
+        config.sandbox = DockerSandboxServiceInjector()
+        config.sandbox_spec = DockerSandboxSpecServiceInjector()
 
     if config.app_conversation_info is None:
         config.app_conversation_info = SQLAppConversationInfoServiceInjector()
