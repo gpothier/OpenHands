@@ -334,68 +334,72 @@ class SandboxRegistry:
 async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
     """Create a SandboxRegistry with all available sandbox implementations.
 
-    This factory function creates adapters wrapping the legacy SandboxService
-    and SandboxSpecService implementations and registers them in the registry.
+    This factory function creates services directly (not via injectors)
+    and registers them in the registry.
     """
-    from openhands.app_server.sandbox.docker_sandbox_service import (
-        DockerSandboxService,
-        DockerSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.docker_sandbox_spec_service import (
-        DockerSandboxSpecServiceInjector,
-    )
+    from openhands.app_server.config import get_global_config
     from openhands.app_server.sandbox.preset_sandbox_spec_service import (
         PresetSandboxSpecService,
     )
     from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
     from openhands.app_server.sandbox.sandbox_spec_service import (
         DEFAULT_WORKING_DIR,
-        get_agent_server_image,
     )
-    from openhands.app_server.services.injector import InjectorState
 
     registry = SandboxRegistry()
-    state = InjectorState()
 
-    # Build Docker sandbox adapter
-    docker_spec_injector = DockerSandboxSpecServiceInjector()
-    docker_service_injector = DockerSandboxServiceInjector()
-
-    # Get Docker kwargs from environment
-    docker_kwargs: dict = {}
-    if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
-        docker_kwargs['startup_grace_seconds'] = int(
-            os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
-        )
-    if os.getenv('SANDBOX_PROXY_VSCODE'):
-        docker_kwargs['proxy_vscode'] = os.environ['SANDBOX_PROXY_VSCODE'].lower() in (
-            '1',
-            'true',
-            'yes',
-            'on',
-        )
-    if os.getenv('SANDBOX_PROXY_AGENT'):
-        docker_kwargs['proxy_agent'] = os.environ['SANDBOX_PROXY_AGENT'].lower() in (
-            '1',
-            'true',
-            'yes',
-            'on',
-        )
-
-    if docker_kwargs:
-        docker_service_injector = DockerSandboxServiceInjector(**docker_kwargs)
-
+    # Build Docker sandbox adapter directly (not using injector pattern
+    # since injectors call get_sandbox_spec_service which requires registry)
     try:
-        async for docker_spec_service in docker_spec_injector.inject(state, None):
-            async for docker_service in docker_service_injector.inject(state, None):
-                docker_adapter = SandboxAdapter(
-                    _sandbox_type=SandboxType.DOCKER,
-                    service=docker_service,
-                    spec_service=docker_spec_service,
-                )
-                registry.register(docker_adapter)
-                break
-            break
+        from openhands.app_server.sandbox.docker_sandbox_service import (
+            DockerSandboxService,
+        )
+        from openhands.app_server.sandbox.docker_sandbox_spec_service import (
+            DockerSandboxSpecService,
+        )
+
+        # Create Docker spec service directly
+        docker_spec_service = DockerSandboxSpecService()
+
+        # Get config for web_url and cors origins
+        config = get_global_config()
+
+        # Get Docker kwargs from environment
+        docker_kwargs: dict[str, object] = {
+            'sandbox_spec_service': docker_spec_service,
+        }
+        if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
+            docker_kwargs['startup_grace_seconds'] = int(
+                os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
+            )
+        if os.getenv('SANDBOX_PROXY_VSCODE'):
+            docker_kwargs['proxy_vscode'] = os.environ['SANDBOX_PROXY_VSCODE'].lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
+        if os.getenv('SANDBOX_PROXY_AGENT'):
+            docker_kwargs['proxy_agent'] = os.environ['SANDBOX_PROXY_AGENT'].lower() in (
+                '1',
+                'true',
+                'yes',
+                'on',
+            )
+        if config.web_url:
+            docker_kwargs['web_url'] = config.web_url
+        if config.permitted_cors_origins:
+            docker_kwargs['permitted_cors_origins'] = config.permitted_cors_origins
+
+        docker_service = DockerSandboxService(**docker_kwargs)
+
+        docker_adapter = SandboxAdapter(
+            _sandbox_type=SandboxType.DOCKER,
+            service=docker_service,
+            spec_service=docker_spec_service,
+        )
+        registry.register(docker_adapter)
+        _logger.info('Docker sandbox registered')
     except Exception as e:
         _logger.warning(f'Failed to initialize Docker sandbox: {e}')
 
