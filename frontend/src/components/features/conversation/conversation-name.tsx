@@ -1,6 +1,7 @@
 import React from "react";
 import { useParams } from "react-router";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import { useActiveConversation } from "#/hooks/query/use-active-conversation";
 import { useUpdateConversation } from "#/hooks/mutation/use-update-conversation";
 import { useConversationNameContextMenu } from "#/hooks/use-conversation-name-context-menu";
@@ -15,10 +16,12 @@ import { ConfirmDeleteModal } from "../conversation-panel/confirm-delete-modal";
 import { ConfirmStopModal } from "../conversation-panel/confirm-stop-modal";
 import { MetricsModal } from "./metrics-modal/metrics-modal";
 import CircuitIcon from "#/icons/u-circuit.svg?react";
+import { V1AppConversation } from "#/api/conversation-service/v1-conversation-service.types";
 
 export function ConversationName() {
   const { t } = useTranslation();
   const { conversationId } = useParams<{ conversationId: string }>();
+  const queryClient = useQueryClient();
   const { data: conversation } = useActiveConversation();
   const { mutate: updateConversation } = useUpdateConversation();
 
@@ -74,6 +77,14 @@ export function ConversationName() {
     if (inputRef.current?.value && conversationId) {
       const trimmed = inputRef.current.value.trim();
       if (trimmed !== conversation?.title) {
+        // Update cache synchronously to prevent flicker when switching to view mode.
+        // The mutation's onMutate is async and may not complete before setTitleMode runs.
+        queryClient.setQueryData(
+          ["user", "conversation", conversationId],
+          (old: V1AppConversation | null | undefined) =>
+            old ? { ...old, title: trimmed } : old,
+        );
+
         updateConversation(
           { conversationId, newTitle: trimmed },
           {
