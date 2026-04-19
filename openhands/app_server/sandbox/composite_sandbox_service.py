@@ -13,6 +13,7 @@ from fastapi import Request
 from openhands.app_server.sandbox.sandbox_models import (
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
 )
 from openhands.app_server.sandbox.sandbox_service import (
     SandboxService,
@@ -119,19 +120,19 @@ class CompositeSandboxService(SandboxService):
 
     async def start_sandbox(
         self,
-        sandbox_spec_id: str | None = None,
-        sandbox_id: str | None = None,
-        extra_env: dict[str, str] | None = None,
+        params: SandboxStartParams | None = None,
     ) -> SandboxInfo:
         """Start a sandbox using the appropriate service based on spec type."""
+        if params is None:
+            params = SandboxStartParams()
         _logger.info(
             f'CompositeSandboxService.start_sandbox called with '
-            f'sandbox_spec_id={sandbox_spec_id}, sandbox_id={sandbox_id}'
+            f'sandbox_spec_id={params.sandbox_spec_id}, sandbox_id={params.sandbox_id}'
         )
-        service = await self._get_service_for_spec(sandbox_spec_id)
+        service = await self._get_service_for_spec(params.sandbox_spec_id)
         service_name = type(service).__name__
         _logger.info(f'Routing to service: {service_name}')
-        info = await service.start_sandbox(sandbox_spec_id, sandbox_id, extra_env)
+        info = await service.start_sandbox(params)
         # Track ownership
         self._sandbox_ownership[info.id] = service
         return info

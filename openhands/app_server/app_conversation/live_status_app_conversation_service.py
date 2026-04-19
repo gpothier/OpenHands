@@ -74,7 +74,9 @@ from openhands.app_server.sandbox.firecracker_sandbox_service import (
 )
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
+    FirecrackerSandboxStartParams,
     SandboxInfo,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
@@ -722,12 +724,24 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 # Get extra environment variables (SSH keys, etc.)
                 extra_env = await self._get_extra_env()
 
-                sandbox = await self.sandbox_service.start_sandbox(
-                    sandbox_spec_id=task.request.sandbox_spec_id,
-                    sandbox_id=sandbox_id_str,
-                    extra_env=extra_env or None,
-                    fc_storage_size_gb=task.request.fc_storage_size_gb,
-                )
+                # Build sandbox start params
+                # Use FirecrackerSandboxStartParams if storage size is specified
+                params: SandboxStartParams
+                if task.request.fc_storage_size_gb is not None:
+                    params = FirecrackerSandboxStartParams(
+                        sandbox_spec_id=task.request.sandbox_spec_id,
+                        sandbox_id=sandbox_id_str,
+                        extra_env=extra_env or None,
+                        storage_size_gb=task.request.fc_storage_size_gb,
+                    )
+                else:
+                    params = SandboxStartParams(
+                        sandbox_spec_id=task.request.sandbox_spec_id,
+                        sandbox_id=sandbox_id_str,
+                        extra_env=extra_env or None,
+                    )
+
+                sandbox = await self.sandbox_service.start_sandbox(params)
             task.sandbox_id = sandbox.id
         else:
             sandbox_info = await self.sandbox_service.get_sandbox(

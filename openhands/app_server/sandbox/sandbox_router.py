@@ -11,6 +11,7 @@ from openhands.app_server.config import depends_sandbox_service
 from openhands.app_server.sandbox.sandbox_models import (
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
     SecretNameItem,
     SecretNamesResponse,
 )
@@ -78,20 +79,10 @@ async def start_sandbox(
     sandbox_service: SandboxService = sandbox_service_dependency,
     settings_store: SettingsStore | None = Depends(get_user_settings_store),
 ) -> SandboxInfo:
-    # Get user's SSH public keys from settings
-    ssh_public_keys: list[str] | None = None
-    try:
-        if settings_store:
-            settings = await settings_store.load()
-            if settings and settings.ssh_public_keys:
-                ssh_public_keys = [k.key for k in settings.ssh_public_keys]
-    except Exception as e:
-        _logger.warning(f'Failed to load SSH keys from settings: {e}')
-
-    info = await sandbox_service.start_sandbox(
-        sandbox_spec_id=sandbox_spec_id,
-        ssh_public_keys=ssh_public_keys,
-    )
+    # Note: SSH public keys from settings are not currently passed to sandbox
+    # TODO: Add SSH public keys support to SandboxStartParams if needed
+    params = SandboxStartParams(sandbox_spec_id=sandbox_spec_id)
+    info = await sandbox_service.start_sandbox(params)
     return info
 
 

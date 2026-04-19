@@ -25,6 +25,7 @@ from openhands.app_server.sandbox.sandbox_models import (
     ExposedUrl,
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
@@ -427,13 +428,12 @@ class DockerSandboxService(SandboxService):
 
     async def start_sandbox(
         self,
-        sandbox_spec_id: str | None = None,
-        sandbox_id: str | None = None,
-        extra_env: dict[str, str] | None = None,
-        fc_storage_size_gb: int | None = None,
+        params: SandboxStartParams | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
-        # fc_storage_size_gb is ignored for Docker sandboxes
+        if params is None:
+            params = SandboxStartParams()
+
         # Warn about port collision risk when using host network mode with multiple sandboxes
         if self.use_host_network and self.max_num_sandboxes > 1:
             _logger.warning(
@@ -446,17 +446,18 @@ class DockerSandboxService(SandboxService):
         # Enforce sandbox limits by cleaning up old sandboxes
         await self.pause_old_sandboxes(self.max_num_sandboxes - 1)
 
-        if sandbox_spec_id is None:
+        if params.sandbox_spec_id is None:
             sandbox_spec = await self.sandbox_spec_service.get_default_sandbox_spec()
         else:
             sandbox_spec_maybe = await self.sandbox_spec_service.get_sandbox_spec(
-                sandbox_spec_id
+                params.sandbox_spec_id
             )
             if sandbox_spec_maybe is None:
                 raise ValueError('Sandbox Spec not found')
             sandbox_spec = sandbox_spec_maybe
 
         # Generate a sandbox id if none was provided
+        sandbox_id = params.sandbox_id
         if sandbox_id is None:
             sandbox_id = base62.encodebytes(os.urandom(16))
 
@@ -468,8 +469,8 @@ class DockerSandboxService(SandboxService):
         env_vars = get_default_sandbox_env()
         if sandbox_spec.initial_env:
             env_vars.update(sandbox_spec.initial_env)
-        if extra_env:
-            env_vars.update(extra_env)
+        if params.extra_env:
+            env_vars.update(params.extra_env)
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
         env_vars[WEBHOOK_CALLBACK_VARIABLE] = (
             f'http://host.docker.internal:{self.host_port}/api/v1/webhooks'

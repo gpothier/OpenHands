@@ -35,6 +35,7 @@ from openhands.app_server.sandbox.sandbox_models import (
     ExposedUrl,
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
@@ -434,33 +435,32 @@ class RemoteSandboxService(SandboxService):
 
     async def start_sandbox(
         self,
-        sandbox_spec_id: str | None = None,
-        sandbox_id: str | None = None,
-        extra_env: dict[str, str] | None = None,
-        fc_storage_size_gb: int | None = None,
+        params: SandboxStartParams | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox by creating a remote runtime."""
         # Note: extra_env would need to be passed to the runtime provider
         # This is a placeholder for future implementation
-        # fc_storage_size_gb is ignored for remote sandboxes
+        if params is None:
+            params = SandboxStartParams()
         try:
             # Enforce sandbox limits by cleaning up old sandboxes
             await self.pause_old_sandboxes(self.max_num_sandboxes - 1)
 
             # Get sandbox spec
-            if sandbox_spec_id is None:
+            if params.sandbox_spec_id is None:
                 sandbox_spec = (
                     await self.sandbox_spec_service.get_default_sandbox_spec()
                 )
             else:
                 sandbox_spec_maybe = await self.sandbox_spec_service.get_sandbox_spec(
-                    sandbox_spec_id
+                    params.sandbox_spec_id
                 )
                 if sandbox_spec_maybe is None:
                     raise ValueError('Sandbox Spec not found')
                 sandbox_spec = sandbox_spec_maybe
 
             # Create a unique id, use provided sandbox_id if available
+            sandbox_id = params.sandbox_id
             if sandbox_id is None:
                 sandbox_id = base62.encodebytes(os.urandom(16))
 

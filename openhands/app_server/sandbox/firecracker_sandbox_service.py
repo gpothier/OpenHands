@@ -45,8 +45,10 @@ from openhands.app_server.sandbox.sandbox_models import (
     WORKER_1,
     WORKER_2,
     ExposedUrl,
+    FirecrackerSandboxStartParams,
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
@@ -552,30 +554,35 @@ class FirecrackerSandboxService(SandboxService):
 
     async def start_sandbox(
         self,
-        sandbox_spec_id: str | None = None,
-        sandbox_id: str | None = None,
-        extra_env: dict[str, str] | None = None,
-        fc_storage_size_gb: int | None = None,
+        params: SandboxStartParams | None = None,
     ) -> SandboxInfo:
         """Start a new Firecracker microVM sandbox."""
-        vm_id = sandbox_id or f'fc-{secrets.token_hex(8)}'
+        if params is None:
+            params = SandboxStartParams()
+
+        # Extract Firecracker-specific parameters
+        storage_size_gb: int | None = None
+        if isinstance(params, FirecrackerSandboxStartParams):
+            storage_size_gb = params.storage_size_gb
+
+        vm_id = params.sandbox_id or f'fc-{secrets.token_hex(8)}'
         session_api_key = secrets.token_urlsafe(32)
 
         # Get environment variables (defaults + spec overrides + extra_env)
         env_vars = get_default_sandbox_env()
         working_dir = DEFAULT_WORKING_DIR
         spec_exposed_ports: list[ExposedPort] = []
-        if sandbox_spec_id and self.sandbox_spec_service:
+        if params.sandbox_spec_id and self.sandbox_spec_service:
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
-                sandbox_spec_id
+                params.sandbox_spec_id
             )
             if sandbox_spec:
                 if sandbox_spec.initial_env:
                     env_vars.update(sandbox_spec.initial_env)
                 working_dir = sandbox_spec.working_dir
                 spec_exposed_ports = sandbox_spec.exposed_ports
-        if extra_env:
-            env_vars.update(extra_env)
+        if params.extra_env:
+            env_vars.update(params.extra_env)
 
         # Merge default exposed ports with spec ports (spec ports override defaults)
         spec_port_names = {p.name for p in spec_exposed_ports}
@@ -612,11 +619,11 @@ class FirecrackerSandboxService(SandboxService):
             user='openhands',
             working_dir=working_dir,
             exposed_ports=ports_to_expose,
-            disk_size_gb=fc_storage_size_gb,
+            disk_size_gb=storage_size_gb,
         )
 
         vm = FirecrackerVM.from_daemon_response(response)
-        vm.sandbox_spec_id = sandbox_spec_id
+        vm.sandbox_spec_id = params.sandbox_spec_id
         # Store session_api_key locally (not returned by daemon)
         vm.session_api_key = session_api_key
         vm.working_dir = working_dir
