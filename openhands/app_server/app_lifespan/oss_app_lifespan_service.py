@@ -25,9 +25,9 @@ class OssAppLifespanService(AppLifespanService):
         if self.run_alembic_on_startup:
             self.run_alembic()
 
-        # Initialize sandbox registry if in registry mode
+        # Initialize sandbox registry if in registry/composite mode
         sandbox_type = os.environ.get('SANDBOX_TYPE', '')
-        if sandbox_type == 'registry':
+        if sandbox_type in ('composite', 'registry'):
             await self._init_sandbox_registry()
 
         return self

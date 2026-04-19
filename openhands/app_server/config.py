@@ -258,7 +258,7 @@ def config_from_env() -> AppServerConfig:
             )
         elif sandbox_type in ('local', 'process'):
             config.sandbox = ProcessSandboxServiceInjector()
-        elif sandbox_type == 'registry':
+        elif sandbox_type in ('composite', 'registry'):
             # Registry mode: supports all available sandbox types
             # (Docker, Firecracker, etc.) - users can select per-conversation via UI
             # The registry is initialized at startup via the lifespan service
@@ -332,13 +332,10 @@ def config_from_env() -> AppServerConfig:
             config.sandbox_spec = RemoteSandboxSpecServiceInjector()
         elif sandbox_type in ('local', 'process'):
             config.sandbox_spec = ProcessSandboxSpecServiceInjector()
-        elif sandbox_type == 'composite':
-            # Composite mode: return specs for all available sandbox types
-            from openhands.app_server.sandbox.composite_sandbox_spec_service import (
-                CompositeSandboxSpecServiceInjector,
-            )
-
-            config.sandbox_spec = CompositeSandboxSpecServiceInjector()
+        elif sandbox_type in ('composite', 'registry'):
+            # Registry/composite mode: specs are provided by the registry
+            # For backward compatibility, also set up Docker spec service
+            config.sandbox_spec = DockerSandboxSpecServiceInjector()
         else:
             config.sandbox_spec = DockerSandboxSpecServiceInjector()
 
