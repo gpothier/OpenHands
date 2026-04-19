@@ -1,24 +1,62 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from alembic import command
 from alembic.config import Config
 
 from openhands.app_server.app_lifespan.app_lifespan_service import AppLifespanService
 
+if TYPE_CHECKING:
+    from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
+
+_logger = logging.getLogger(__name__)
+
 
 class OssAppLifespanService(AppLifespanService):
     run_alembic_on_startup: bool = True
+    _registry_context: object | None = None
+    _registry: 'SandboxRegistry | None' = None
 
     async def __aenter__(self):
         if self.run_alembic_on_startup:
             self.run_alembic()
+
+        # Initialize sandbox registry if in registry mode
+        sandbox_type = os.environ.get('SANDBOX_TYPE', '')
+        if sandbox_type == 'registry':
+            await self._init_sandbox_registry()
+
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        pass
+        # Clean up sandbox registry
+        if self._registry_context is not None:
+            await self._registry_context.__aexit__(exc_type, exc_value, traceback)
+            self._registry_context = None
+            self._registry = None
+
+    async def _init_sandbox_registry(self):
+        """Initialize the sandbox registry and store it in global config."""
+        from openhands.app_server.config import get_global_config
+        from openhands.app_server.sandbox.sandbox_service_registry import (
+            create_sandbox_registry,
+        )
+
+        _logger.info('Initializing sandbox registry...')
+        self._registry_context = create_sandbox_registry()
+        self._registry = await self._registry_context.__aenter__()
+
+        # Store in global config
+        config = get_global_config()
+        config.sandbox_registry = self._registry
+
+        _logger.info(
+            f'Sandbox registry initialized with types: {self._registry.available_types}'
+        )
 
     def run_alembic(self):
         # Run alembic upgrade head to ensure database is up to date

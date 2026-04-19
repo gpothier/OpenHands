@@ -143,7 +143,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
     app_conversation_start_task_service: AppConversationStartTaskService
     event_callback_service: EventCallbackService
     event_service: EventService
-    sandbox_service: SandboxService
+    # Can be either old SandboxService or new SandboxRegistry
+    sandbox_service: SandboxService | SandboxRegistry
     sandbox_spec_service: SandboxSpecService
     jwt_service: JwtService
     pending_message_service: PendingMessageService

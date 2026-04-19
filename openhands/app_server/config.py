@@ -262,12 +262,10 @@ def config_from_env() -> AppServerConfig:
             # Registry mode: supports all available sandbox types
             # (Docker, Firecracker, etc.) - users can select per-conversation via UI
             # The registry is initialized at startup via the lifespan service
-            # For now, we still need the old injectors for backward compatibility
-            from openhands.app_server.sandbox.composite_sandbox_service import (
-                CompositeSandboxServiceInjector,
-            )
-
-            config.sandbox = CompositeSandboxServiceInjector()
+            # We still set up the old injectors for backward compatibility with
+            # code that hasn't migrated to the registry yet
+            config.sandbox = DockerSandboxServiceInjector()
+            config.sandbox_spec = DockerSandboxSpecServiceInjector()
         else:
             # Default to Docker
             # Support legacy environment variables for Docker sandbox configuration

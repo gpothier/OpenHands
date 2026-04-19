@@ -4,17 +4,22 @@ This module provides the `SandboxRegistry` class that holds all available
 sandbox implementations and provides unified access to specs and operations.
 """
 
+import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import AsyncGenerator
+
+import httpx
 
 from openhands.app_server.sandbox.sandbox import Sandbox, SandboxAdapter
 from openhands.app_server.sandbox.sandbox_models import (
     SandboxInfo,
     SandboxPage,
     SandboxStartParams,
+    SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_spec_models import (
     SandboxSpecInfo,
@@ -251,6 +256,54 @@ class SandboxRegistry:
             except Exception:
                 pass
         return False
+
+    async def batch_get_sandboxes(
+        self, sandbox_ids: list[str]
+    ) -> list[SandboxInfo | None]:
+        """Get a batch of sandboxes, returning None for any not found."""
+        results = await asyncio.gather(
+            *[self.get_sandbox(sandbox_id) for sandbox_id in sandbox_ids]
+        )
+        return list(results)
+
+    async def wait_for_sandbox_running(
+        self,
+        sandbox_id: str,
+        timeout: int = 120,
+        poll_interval: int = 2,
+        httpx_client: httpx.AsyncClient | None = None,
+    ) -> SandboxInfo:
+        """Wait for a sandbox to reach RUNNING status.
+
+        Args:
+            sandbox_id: The sandbox ID to wait for
+            timeout: Maximum time to wait in seconds
+            poll_interval: Time between status checks in seconds
+            httpx_client: Optional httpx client for health checks
+
+        Returns:
+            SandboxInfo with RUNNING status
+
+        Raises:
+            RuntimeError: If sandbox not found, enters ERROR state, or times out
+        """
+        from openhands.app_server.errors import SandboxError
+
+        start = time.time()
+        while time.time() - start <= timeout:
+            sandbox = await self.get_sandbox(sandbox_id)
+            if sandbox is None:
+                raise SandboxError(f'Sandbox not found: {sandbox_id}')
+
+            if sandbox.status == SandboxStatus.ERROR:
+                raise SandboxError(f'Sandbox entered error state: {sandbox_id}')
+
+            if sandbox.status == SandboxStatus.RUNNING:
+                return sandbox
+
+            await asyncio.sleep(poll_interval)
+
+        raise SandboxError(f'Timeout waiting for sandbox {sandbox_id} to start')
 
 
 @asynccontextmanager
