@@ -173,6 +173,7 @@ class DaemonClient:
         user: str | None = None,
         working_dir: str | None = None,
         exposed_ports: list[int] | None = None,
+        disk_size_gb: int | None = None,
     ) -> dict:
         """Create a new VM.
         
@@ -184,6 +185,7 @@ class DaemonClient:
             user: User to run the entrypoint as (default: root)
             working_dir: Working directory for the entrypoint
             exposed_ports: List of VM ports to expose on the host (returns port_mappings)
+            disk_size_gb: Storage size in GB for the VM's root filesystem
         """
         body = {
             'vm_id': vm_id,
@@ -198,6 +200,8 @@ class DaemonClient:
             body['working_dir'] = working_dir
         if exposed_ports:
             body['exposed_ports'] = exposed_ports
+        if disk_size_gb:
+            body['disk_size_gb'] = disk_size_gb
         response = self._send_request('POST', '/vms', body, timeout=1800)
         if response.get('error'):
             raise SandboxError(response['error'])
@@ -551,6 +555,7 @@ class FirecrackerSandboxService(SandboxService):
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
         extra_env: dict[str, str] | None = None,
+        fc_storage_size_gb: int | None = None,
     ) -> SandboxInfo:
         """Start a new Firecracker microVM sandbox."""
         vm_id = sandbox_id or f'fc-{secrets.token_hex(8)}'
@@ -607,6 +612,7 @@ class FirecrackerSandboxService(SandboxService):
             user='openhands',
             working_dir=working_dir,
             exposed_ports=ports_to_expose,
+            disk_size_gb=fc_storage_size_gb,
         )
 
         vm = FirecrackerVM.from_daemon_response(response)

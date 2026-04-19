@@ -726,6 +726,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     sandbox_spec_id=task.request.sandbox_spec_id,
                     sandbox_id=sandbox_id_str,
                     extra_env=extra_env or None,
+                    fc_storage_size_gb=task.request.fc_storage_size_gb,
                 )
             task.sandbox_id = sandbox.id
         else:

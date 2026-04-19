@@ -155,6 +155,14 @@ class AppConversationStartRequest(OpenHandsModel):
             'Ignored if sandbox_id is provided (reusing existing sandbox).'
         ),
     )
+    fc_storage_size_gb: int | None = Field(
+        default=None,
+        description=(
+            'Storage size in GB for Firecracker VM sandboxes. '
+            'Only used when sandbox_spec_id refers to a Firecracker sandbox. '
+            'Default is 16GB if not specified.'
+        ),
+    )
     conversation_id: UUID | None = Field(default=None)
     initial_message: SendMessageRequest | None = None
     system_message_suffix: str | None = None

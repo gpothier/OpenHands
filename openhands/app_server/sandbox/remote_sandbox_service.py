@@ -437,10 +437,12 @@ class RemoteSandboxService(SandboxService):
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
         extra_env: dict[str, str] | None = None,
+        fc_storage_size_gb: int | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox by creating a remote runtime."""
         # Note: extra_env would need to be passed to the runtime provider
         # This is a placeholder for future implementation
+        # fc_storage_size_gb is ignored for remote sandboxes
         try:
             # Enforce sandbox limits by cleaning up old sandboxes
             await self.pause_old_sandboxes(self.max_num_sandboxes - 1)

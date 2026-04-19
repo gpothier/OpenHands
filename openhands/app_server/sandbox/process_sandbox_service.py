@@ -296,10 +296,12 @@ class ProcessSandboxService(SandboxService):
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
         extra_env: dict[str, str] | None = None,
+        fc_storage_size_gb: int | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
         # Note: extra_env is accepted but not used in process sandbox service
         # as process sandboxes inherit the parent environment
+        # fc_storage_size_gb is ignored for process sandboxes
 
         # Get sandbox spec
         if sandbox_spec_id is None:

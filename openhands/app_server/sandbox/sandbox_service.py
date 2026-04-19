@@ -63,6 +63,7 @@ class SandboxService(ABC):
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
         extra_env: dict[str, str] | None = None,
+        fc_storage_size_gb: int | None = None,
     ) -> SandboxInfo:
         """Begin the process of starting a sandbox.
 
@@ -71,6 +72,8 @@ class SandboxService(ABC):
         of generating a random one.
         If extra_env is provided, these environment variables will be merged into
         the sandbox's environment (in addition to those from the sandbox spec).
+        If fc_storage_size_gb is provided and the sandbox is a Firecracker VM,
+        use this storage size instead of the default.
         """
 
     @abstractmethod

@@ -430,8 +430,10 @@ class DockerSandboxService(SandboxService):
         sandbox_spec_id: str | None = None,
         sandbox_id: str | None = None,
         extra_env: dict[str, str] | None = None,
+        fc_storage_size_gb: int | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
+        # fc_storage_size_gb is ignored for Docker sandboxes
         # Warn about port collision risk when using host network mode with multiple sandboxes
         if self.use_host_network and self.max_num_sandboxes > 1:
             _logger.warning(
