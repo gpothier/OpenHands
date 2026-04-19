@@ -243,92 +243,25 @@ def config_from_env() -> AppServerConfig:
         config.event_callback = SQLEventCallbackServiceInjector()
 
     if config.sandbox is None:
-        # OH_SANDBOX_TYPE controls sandbox service selection
-        # Most modes use the sandbox registry which provides all available types
-        # (Docker, Firecracker when daemon is present, etc.)
-        # Special modes: remote, process/local - these bypass the registry
+        # OH_SANDBOX_TYPE: special operational modes that bypass the registry
+        # - 'remote': connect to external sandbox service
+        # - 'process'/'local': run sandbox as local process (testing)
+        # Default: use registry which provides all available sandbox types
         sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
-        # Fall back to RUNTIME for backward compatibility
-        if not sandbox_type:
-            sandbox_type = os.getenv('RUNTIME', 'docker').lower()
 
         if sandbox_type == 'remote':
             config.sandbox = RemoteSandboxServiceInjector(
                 api_key=os.environ['SANDBOX_API_KEY'],
                 api_url=os.environ['SANDBOX_REMOTE_RUNTIME_API_URL'],
             )
-        elif sandbox_type in ('local', 'process'):
-            config.sandbox = ProcessSandboxServiceInjector()
-        else:
-            # Default: use Docker injectors for backward compatibility
-            # The registry (initialized at startup) provides multi-type support
-            # Support legacy environment variables for Docker sandbox configuration
-            docker_sandbox_kwargs: dict = {}
-            if os.getenv('SANDBOX_HOST_PORT'):
-                docker_sandbox_kwargs['host_port'] = int(
-                    os.environ['SANDBOX_HOST_PORT']
-                )
-            if os.getenv('SANDBOX_CONTAINER_URL_PATTERN'):
-                docker_sandbox_kwargs['container_url_pattern'] = os.environ[
-                    'SANDBOX_CONTAINER_URL_PATTERN'
-                ]
-            # Allow configuring sandbox startup grace period
-            # This is useful for slower machines or cloud environments where
-            # the agent-server container takes longer to initialize
-            if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
-                docker_sandbox_kwargs['startup_grace_seconds'] = int(
-                    os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
-                )
-            if os.getenv('SANDBOX_PROXY_VSCODE'):
-                docker_sandbox_kwargs['proxy_vscode'] = os.environ[
-                    'SANDBOX_PROXY_VSCODE'
-                ].lower() in ('1', 'true', 'yes', 'on')
-            if os.getenv('SANDBOX_PROXY_AGENT'):
-                docker_sandbox_kwargs['proxy_agent'] = os.environ[
-                    'SANDBOX_PROXY_AGENT'
-                ].lower() in ('1', 'true', 'yes', 'on')
-            # Parse SANDBOX_VOLUMES and convert to VolumeMount objects
-            # This is set by the CLI's --mount-cwd flag
-            sandbox_volumes = os.getenv('SANDBOX_VOLUMES')
-            if sandbox_volumes:
-                from openhands.app_server.sandbox.docker_sandbox_service import (
-                    VolumeMount,
-                )
-
-                mounts = []
-                for mount_spec in sandbox_volumes.split(','):
-                    mount_spec = mount_spec.strip()
-                    if not mount_spec:
-                        continue
-                    parts = mount_spec.split(':')
-                    if len(parts) >= 2:
-                        host_path = parts[0]
-                        container_path = parts[1]
-                        mode = parts[2] if len(parts) > 2 else 'rw'
-                        mounts.append(
-                            VolumeMount(
-                                host_path=host_path,
-                                container_path=container_path,
-                                mode=mode,
-                            )
-                        )
-                if mounts:
-                    docker_sandbox_kwargs['mounts'] = mounts
-            config.sandbox = DockerSandboxServiceInjector(**docker_sandbox_kwargs)
-
-    if config.sandbox_spec is None:
-        # Use same sandbox_type as above for consistency
-        sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
-        if not sandbox_type:
-            sandbox_type = os.getenv('RUNTIME', 'docker').lower()
-
-        if sandbox_type == 'remote':
             config.sandbox_spec = RemoteSandboxSpecServiceInjector()
         elif sandbox_type in ('local', 'process'):
+            config.sandbox = ProcessSandboxServiceInjector()
             config.sandbox_spec = ProcessSandboxSpecServiceInjector()
         else:
-            # Default: Docker spec service for backward compatibility
-            # The registry (if initialized) overrides via depends_sandbox_spec_service
+            # Default: Docker injectors as fallback when registry is not ready
+            # The registry (initialized at startup) handles all sandbox types
+            config.sandbox = DockerSandboxServiceInjector()
             config.sandbox_spec = DockerSandboxSpecServiceInjector()
 
     if config.app_conversation_info is None:
