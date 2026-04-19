@@ -35,13 +35,16 @@ class OssAppLifespanService(AppLifespanService):
     async def __aexit__(self, exc_type, exc_value, traceback):
         # Clean up sandbox registry
         if self._registry_context is not None:
+            from openhands.app_server.config import set_sandbox_registry
+
             await self._registry_context.__aexit__(exc_type, exc_value, traceback)
             self._registry_context = None
             self._registry = None
+            set_sandbox_registry(None)
 
     async def _init_sandbox_registry(self):
-        """Initialize the sandbox registry and store it in global config."""
-        from openhands.app_server.config import get_global_config
+        """Initialize the sandbox registry and store it globally."""
+        from openhands.app_server.config import set_sandbox_registry
         from openhands.app_server.sandbox.sandbox_service_registry import (
             create_sandbox_registry,
         )
@@ -50,9 +53,8 @@ class OssAppLifespanService(AppLifespanService):
         self._registry_context = create_sandbox_registry()
         self._registry = await self._registry_context.__aenter__()
 
-        # Store in global config
-        config = get_global_config()
-        config.sandbox_registry = self._registry
+        # Store in module-level variable (not in Pydantic model)
+        set_sandbox_registry(self._registry)
 
         _logger.info(
             f'Sandbox registry initialized with types: {self._registry.available_types}'

@@ -64,6 +64,11 @@ from openhands.sdk.utils.models import OpenHandsModel
 from openhands.server.types import AppMode
 from openhands.utils.environment import StorageProvider, get_storage_provider
 
+# Module-level storage for the sandbox registry
+# This is stored separately from AppServerConfig because SandboxRegistry
+# contains Sandbox (an ABC) which Pydantic cannot serialize
+_sandbox_registry: SandboxRegistry | None = None
+
 
 def get_default_persistence_dir() -> Path:
     # Recheck env because this function is also used to generate other defaults
@@ -145,8 +150,6 @@ class AppServerConfig(OpenHandsModel):
     event_callback: EventCallbackServiceInjector | None = None
     sandbox: SandboxServiceInjector | None = None
     sandbox_spec: SandboxSpecServiceInjector | None = None
-    # New unified sandbox registry (replaces sandbox + sandbox_spec when set)
-    sandbox_registry: SandboxRegistry | None = None
     app_conversation_info: AppConversationInfoServiceInjector | None = None
     app_conversation_start_task: AppConversationStartTaskServiceInjector | None = None
     app_conversation: AppConversationServiceInjector | None = None
@@ -424,7 +427,16 @@ def get_sandbox_registry() -> SandboxRegistry | None:
     and their specs. Use this instead of separate sandbox_service and sandbox_spec_service
     when you need to work with multiple sandbox types.
     """
-    return get_global_config().sandbox_registry
+    return _sandbox_registry
+
+
+def set_sandbox_registry(registry: SandboxRegistry | None) -> None:
+    """Set the sandbox registry.
+
+    Called by the lifespan service during app startup.
+    """
+    global _sandbox_registry
+    _sandbox_registry = registry
 
 
 def get_sandbox(sandbox_type: 'SandboxType') -> Sandbox | None:
