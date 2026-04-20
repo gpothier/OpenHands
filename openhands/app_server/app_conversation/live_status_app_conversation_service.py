@@ -724,14 +724,18 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 extra_env = await self._get_extra_env()
 
                 # Build sandbox start params
-                # Use FirecrackerSandboxStartParams if storage size is specified
+                # Use FirecrackerSandboxStartParams if storage or RAM size is specified
                 params: SandboxStartParams
-                if task.request.fc_storage_size_gb is not None:
+                if (
+                    task.request.fc_storage_size_gb is not None
+                    or task.request.fc_ram_size_gb is not None
+                ):
                     params = FirecrackerSandboxStartParams(
                         sandbox_spec_id=task.request.sandbox_spec_id,
                         sandbox_id=sandbox_id_str,
                         extra_env=extra_env or None,
                         storage_size_gb=task.request.fc_storage_size_gb,
+                        ram_size_gb=task.request.fc_ram_size_gb,
                     )
                 else:
                     params = SandboxStartParams(

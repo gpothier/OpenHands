@@ -163,6 +163,14 @@ class AppConversationStartRequest(OpenHandsModel):
             'Default is 16GB if not specified.'
         ),
     )
+    fc_ram_size_gb: int | None = Field(
+        default=None,
+        description=(
+            'RAM size in GB for Firecracker VM sandboxes. '
+            'Only used when sandbox_spec_id refers to a Firecracker sandbox. '
+            'Default is 2GB if not specified.'
+        ),
+    )
     conversation_id: UUID | None = Field(default=None)
     initial_message: SendMessageRequest | None = None
     system_message_suffix: str | None = None

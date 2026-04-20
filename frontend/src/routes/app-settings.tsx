@@ -75,6 +75,7 @@ function AppSettingsScreen() {
   >(null);
   const [fcStorageSizeHasChanged, setFcStorageSizeHasChanged] =
     React.useState(false);
+  const [fcRamSizeHasChanged, setFcRamSizeHasChanged] = React.useState(false);
 
   const formAction = (formData: FormData) => {
     const languageLabel = formData.get("language-input")?.toString();
@@ -128,6 +129,13 @@ function AppSettingsScreen() {
       : (settings?.default_fc_storage_size_gb ??
         DEFAULT_SETTINGS.default_fc_storage_size_gb);
 
+    // Parse the RAM size input value
+    const fcRamSizeValue = formData.get("fc-ram-size-input")?.toString();
+    const defaultFcRamSizeGb = fcRamSizeValue
+      ? parseInt(fcRamSizeValue, 10) || DEFAULT_SETTINGS.default_fc_ram_size_gb
+      : (settings?.default_fc_ram_size_gb ??
+        DEFAULT_SETTINGS.default_fc_ram_size_gb);
+
     saveSettings(
       {
         language,
@@ -141,6 +149,7 @@ function AppSettingsScreen() {
         git_user_email: gitUserEmail,
         default_sandbox_spec_id: defaultSandboxSpecId,
         default_fc_storage_size_gb: defaultFcStorageSizeGb,
+        default_fc_ram_size_gb: defaultFcRamSizeGb,
       },
       {
         onSuccess: () => {
@@ -164,6 +173,7 @@ function AppSettingsScreen() {
           setSandboxTypeHasChanged(false);
           setSelectedSandboxSpecId(null);
           setFcStorageSizeHasChanged(false);
+          setFcRamSizeHasChanged(false);
         },
       },
     );
@@ -247,6 +257,13 @@ function AppSettingsScreen() {
     setFcStorageSizeHasChanged(newValue !== currentValue);
   };
 
+  const checkIfFcRamSizeHasChanged = (value: string) => {
+    const newValue = parseInt(value, 10);
+    const currentValue =
+      settings?.default_fc_ram_size_gb ?? DEFAULT_SETTINGS.default_fc_ram_size_gb;
+    setFcRamSizeHasChanged(newValue !== currentValue);
+  };
+
   const formIsClean =
     !languageInputHasChanged &&
     !analyticsSwitchHasChanged &&
@@ -258,7 +275,8 @@ function AppSettingsScreen() {
     !gitUserNameHasChanged &&
     !gitUserEmailHasChanged &&
     !sandboxTypeHasChanged &&
-    !fcStorageSizeHasChanged;
+    !fcStorageSizeHasChanged &&
+    !fcRamSizeHasChanged;
 
   const shouldBeLoading = !settings || isLoading || isPending;
 
@@ -374,6 +392,25 @@ function AppSettingsScreen() {
               />
               <p className="text-xs text-[#A3A3A3]">
                 {t(I18nKey.SETTINGS$STORAGE_SIZE_DESCRIPTION)}
+              </p>
+              <SettingsInput
+                testId="fc-ram-size-input"
+                name="fc-ram-size-input"
+                type="number"
+                label={t(I18nKey.SETTINGS$RAM_SIZE)}
+                defaultValue={
+                  settings.default_fc_ram_size_gb?.toString() ||
+                  DEFAULT_SETTINGS.default_fc_ram_size_gb?.toString() ||
+                  "2"
+                }
+                onChange={checkIfFcRamSizeHasChanged}
+                placeholder={t(I18nKey.SETTINGS$RAM_SIZE_GB)}
+                min={1}
+                step={1}
+                className="w-full max-w-[680px]"
+              />
+              <p className="text-xs text-[#A3A3A3]">
+                {t(I18nKey.SETTINGS$RAM_SIZE_DESCRIPTION)}
               </p>
             </div>
           </div>

@@ -53,6 +53,7 @@ export interface V1AppConversationStartRequest {
   sandbox_id?: string | null;
   sandbox_spec_id?: string | null; // Sandbox spec for selecting sandbox type (Docker/Firecracker)
   fc_storage_size_gb?: number | null; // Storage size in GB for Firecracker sandboxes
+  fc_ram_size_gb?: number | null; // RAM size in GB for Firecracker sandboxes
   initial_message?: V1SendMessageRequest | null;
   processors?: unknown[]; // EventCallbackProcessor - keeping as unknown for now
   llm_model?: string | null;
