@@ -351,8 +351,16 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
     # Build Docker sandbox adapter directly (not using injector pattern
     # since injectors call get_sandbox_spec_service which requires registry)
     try:
+        import httpx
+
         from openhands.app_server.sandbox.docker_sandbox_service import (
+            AGENT_SERVER,
             DockerSandboxService,
+            ExposedPort,
+            SSH,
+            VSCODE,
+            WORKER_1,
+            WORKER_2,
         )
         from openhands.app_server.sandbox.docker_sandbox_spec_service import (
             get_default_sandbox_specs,
@@ -364,34 +372,33 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
         # Get config for web_url and cors origins
         config = get_global_config()
 
-        # Get Docker kwargs from environment
-        docker_kwargs: dict[str, object] = {
-            'sandbox_spec_service': docker_spec_service,
-        }
-        if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
-            docker_kwargs['startup_grace_seconds'] = int(
-                os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
-            )
-        if os.getenv('SANDBOX_PROXY_VSCODE'):
-            docker_kwargs['proxy_vscode'] = os.environ['SANDBOX_PROXY_VSCODE'].lower() in (
-                '1',
-                'true',
-                'yes',
-                'on',
-            )
-        if os.getenv('SANDBOX_PROXY_AGENT'):
-            docker_kwargs['proxy_agent'] = os.environ['SANDBOX_PROXY_AGENT'].lower() in (
-                '1',
-                'true',
-                'yes',
-                'on',
-            )
-        if config.web_url:
-            docker_kwargs['web_url'] = config.web_url
-        if config.permitted_cors_origins:
-            docker_kwargs['permitted_cors_origins'] = config.permitted_cors_origins
+        # Default exposed ports (same as injector)
+        default_exposed_ports = [
+            ExposedPort(name=AGENT_SERVER, description='Agent server port', port=8000),
+            ExposedPort(name=VSCODE, description='VSCode server port', port=8001),
+            ExposedPort(name=SSH, description='SSH server port', port=2222, url_template='ssh://{host}:{port}'),
+            ExposedPort(name=WORKER_1, description='Worker port 1', port=8011),
+            ExposedPort(name=WORKER_2, description='Worker port 2', port=8012),
+        ]
 
-        docker_service = DockerSandboxService(**docker_kwargs)
+        # Build Docker service with all required arguments
+        docker_service = DockerSandboxService(
+            sandbox_spec_service=docker_spec_service,
+            container_name_prefix='oh-agent-server-',
+            host_port=int(os.getenv('SANDBOX_HOST_PORT', '3000')),
+            container_url_pattern=os.getenv('SANDBOX_CONTAINER_URL_PATTERN', 'http://localhost:{port}'),
+            mounts=[],
+            exposed_ports=default_exposed_ports,
+            health_check_path='/health',
+            httpx_client=httpx.AsyncClient(),
+            max_num_sandboxes=5,
+            web_url=config.web_url,
+            permitted_cors_origins=config.permitted_cors_origins or [],
+            extra_hosts={'host.docker.internal': 'host-gateway'},
+            startup_grace_seconds=int(os.getenv('SANDBOX_STARTUP_GRACE_SECONDS', '60')),
+            proxy_vscode=os.getenv('SANDBOX_PROXY_VSCODE', '').lower() in ('1', 'true', 'yes', 'on'),
+            proxy_agent=os.getenv('SANDBOX_PROXY_AGENT', '').lower() in ('1', 'true', 'yes', 'on'),
+        )
 
         docker_adapter = SandboxAdapter(
             _sandbox_type=SandboxType.DOCKER,
