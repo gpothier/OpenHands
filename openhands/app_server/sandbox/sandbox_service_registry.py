@@ -355,11 +355,11 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             DockerSandboxService,
         )
         from openhands.app_server.sandbox.docker_sandbox_spec_service import (
-            DockerSandboxSpecService,
+            get_default_sandbox_specs,
         )
 
-        # Create Docker spec service directly
-        docker_spec_service = DockerSandboxSpecService()
+        # Create Docker spec service directly using preset specs
+        docker_spec_service = PresetSandboxSpecService(specs=get_default_sandbox_specs())
 
         # Get config for web_url and cors origins
         config = get_global_config()
