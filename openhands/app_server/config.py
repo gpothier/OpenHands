@@ -329,6 +329,9 @@ async def get_sandbox_spec_service(
         async def get_sandbox_spec(self, spec_id: str):
             return await self._registry.get_spec(spec_id)
 
+        async def get_default_sandbox_spec(self):
+            return await self._registry.get_default_spec()
+
         async def batch_get_sandbox_specs(self, spec_ids: list[str]):
             return [await self.get_sandbox_spec(sid) for sid in spec_ids]
 
@@ -487,6 +490,11 @@ def depends_sandbox_spec_service():
             from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
 
             return await self._registry.get_spec(spec_id)
+
+        async def get_default_sandbox_spec(self) -> 'SandboxSpecInfo | None':
+            from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
+
+            return await self._registry.get_default_spec()
 
         async def batch_get_sandbox_specs(
             self, spec_ids: list[str]
