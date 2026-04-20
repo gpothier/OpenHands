@@ -1,8 +1,9 @@
 """Configuration for the OpenHands App Server."""
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncContextManager
+from typing import AsyncContextManager, AsyncGenerator
 
 import httpx
 from fastapi import Depends, Request
@@ -37,10 +38,12 @@ from openhands.app_server.pending_messages.pending_message_service import (
     PendingMessageService,
     PendingMessageServiceInjector,
 )
+from openhands.app_server.sandbox.sandbox import Sandbox
 from openhands.app_server.sandbox.sandbox_service import (
     SandboxService,
     SandboxServiceInjector,
 )
+from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.sandbox_spec_service import (
     SandboxSpecService,
     SandboxSpecServiceInjector,
@@ -61,6 +64,11 @@ from openhands.app_server.web_client.web_client_config_injector import (
 from openhands.sdk.utils.models import OpenHandsModel
 from openhands.server.types import AppMode
 from openhands.utils.environment import StorageProvider, get_storage_provider
+
+# Module-level storage for the sandbox registry
+# This is stored separately from AppServerConfig because SandboxRegistry
+# contains Sandbox (an ABC) which Pydantic cannot serialize
+_sandbox_registry: SandboxRegistry | None = None
 
 
 def get_default_persistence_dir() -> Path:
@@ -186,24 +194,6 @@ def config_from_env() -> AppServerConfig:
     from openhands.app_server.event_callback.sql_event_callback_service import (
         SQLEventCallbackServiceInjector,
     )
-    from openhands.app_server.sandbox.docker_sandbox_service import (
-        DockerSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.docker_sandbox_spec_service import (
-        DockerSandboxSpecServiceInjector,
-    )
-    from openhands.app_server.sandbox.process_sandbox_service import (
-        ProcessSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.process_sandbox_spec_service import (
-        ProcessSandboxSpecServiceInjector,
-    )
-    from openhands.app_server.sandbox.remote_sandbox_service import (
-        RemoteSandboxServiceInjector,
-    )
-    from openhands.app_server.sandbox.remote_sandbox_spec_service import (
-        RemoteSandboxSpecServiceInjector,
-    )
     from openhands.app_server.user.auth_user_context import (
         AuthUserContextInjector,
     )
@@ -235,109 +225,9 @@ def config_from_env() -> AppServerConfig:
     if config.event_callback is None:
         config.event_callback = SQLEventCallbackServiceInjector()
 
-    if config.sandbox is None:
-        # OH_SANDBOX_TYPE controls sandbox service selection
-        # Note: This is different from RUNTIME which controls the agent runtime
-        # OH_SANDBOX_TYPE options: docker, composite, remote, process
-        # Note: Use 'composite' for Firecracker support - it allows selecting
-        # between Docker and Firecracker per-conversation. Firecracker config
-        # is read from FIRECRACKER_* env vars by the service itself.
-        sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
-        # Fall back to RUNTIME for backward compatibility
-        if not sandbox_type:
-            sandbox_type = os.getenv('RUNTIME', 'docker').lower()
-
-        if sandbox_type == 'remote':
-            config.sandbox = RemoteSandboxServiceInjector(
-                api_key=os.environ['SANDBOX_API_KEY'],
-                api_url=os.environ['SANDBOX_REMOTE_RUNTIME_API_URL'],
-            )
-        elif sandbox_type in ('local', 'process'):
-            config.sandbox = ProcessSandboxServiceInjector()
-        elif sandbox_type == 'composite':
-            # Composite mode: supports both Docker and Firecracker sandboxes
-            # Users can select sandbox type per-conversation via UI
-            # Firecracker config is read from FIRECRACKER_* env vars
-            from openhands.app_server.sandbox.composite_sandbox_service import (
-                CompositeSandboxServiceInjector,
-            )
-
-            config.sandbox = CompositeSandboxServiceInjector()
-        else:
-            # Default to Docker
-            # Support legacy environment variables for Docker sandbox configuration
-            docker_sandbox_kwargs: dict = {}
-            if os.getenv('SANDBOX_HOST_PORT'):
-                docker_sandbox_kwargs['host_port'] = int(
-                    os.environ['SANDBOX_HOST_PORT']
-                )
-            if os.getenv('SANDBOX_CONTAINER_URL_PATTERN'):
-                docker_sandbox_kwargs['container_url_pattern'] = os.environ[
-                    'SANDBOX_CONTAINER_URL_PATTERN'
-                ]
-            # Allow configuring sandbox startup grace period
-            # This is useful for slower machines or cloud environments where
-            # the agent-server container takes longer to initialize
-            if os.getenv('SANDBOX_STARTUP_GRACE_SECONDS'):
-                docker_sandbox_kwargs['startup_grace_seconds'] = int(
-                    os.environ['SANDBOX_STARTUP_GRACE_SECONDS']
-                )
-            if os.getenv('SANDBOX_PROXY_VSCODE'):
-                docker_sandbox_kwargs['proxy_vscode'] = os.environ[
-                    'SANDBOX_PROXY_VSCODE'
-                ].lower() in ('1', 'true', 'yes', 'on')
-            if os.getenv('SANDBOX_PROXY_AGENT'):
-                docker_sandbox_kwargs['proxy_agent'] = os.environ[
-                    'SANDBOX_PROXY_AGENT'
-                ].lower() in ('1', 'true', 'yes', 'on')
-            # Parse SANDBOX_VOLUMES and convert to VolumeMount objects
-            # This is set by the CLI's --mount-cwd flag
-            sandbox_volumes = os.getenv('SANDBOX_VOLUMES')
-            if sandbox_volumes:
-                from openhands.app_server.sandbox.docker_sandbox_service import (
-                    VolumeMount,
-                )
-
-                mounts = []
-                for mount_spec in sandbox_volumes.split(','):
-                    mount_spec = mount_spec.strip()
-                    if not mount_spec:
-                        continue
-                    parts = mount_spec.split(':')
-                    if len(parts) >= 2:
-                        host_path = parts[0]
-                        container_path = parts[1]
-                        mode = parts[2] if len(parts) > 2 else 'rw'
-                        mounts.append(
-                            VolumeMount(
-                                host_path=host_path,
-                                container_path=container_path,
-                                mode=mode,
-                            )
-                        )
-                if mounts:
-                    docker_sandbox_kwargs['mounts'] = mounts
-            config.sandbox = DockerSandboxServiceInjector(**docker_sandbox_kwargs)
-
-    if config.sandbox_spec is None:
-        # Use same sandbox_type as above for consistency
-        sandbox_type = os.getenv('OH_SANDBOX_TYPE', '').lower()
-        if not sandbox_type:
-            sandbox_type = os.getenv('RUNTIME', 'docker').lower()
-
-        if sandbox_type == 'remote':
-            config.sandbox_spec = RemoteSandboxSpecServiceInjector()
-        elif sandbox_type in ('local', 'process'):
-            config.sandbox_spec = ProcessSandboxSpecServiceInjector()
-        elif sandbox_type == 'composite':
-            # Composite mode: return specs for all available sandbox types
-            from openhands.app_server.sandbox.composite_sandbox_spec_service import (
-                CompositeSandboxSpecServiceInjector,
-            )
-
-            config.sandbox_spec = CompositeSandboxSpecServiceInjector()
-        else:
-            config.sandbox_spec = DockerSandboxSpecServiceInjector()
+    # Note: config.sandbox and config.sandbox_spec are legacy injectors
+    # The registry (initialized at startup) provides all sandbox types
+    # These may remain None - the depends_* functions prefer the registry
 
     if config.app_conversation_info is None:
         config.app_conversation_info = SQLAppConversationInfoServiceInjector()
@@ -401,20 +291,86 @@ def get_event_callback_service(
     return injector.context(state, request)
 
 
-def get_sandbox_service(
+@asynccontextmanager
+async def get_sandbox_service(
     state: InjectorState, request: Request | None = None
-) -> AsyncContextManager[SandboxService]:
-    injector = get_global_config().sandbox
-    assert injector is not None
-    return injector.context(state, request)
+) -> AsyncGenerator[SandboxRegistry, None]:
+    """Get the sandbox registry for sandbox operations.
+
+    This function is maintained for API compatibility - it returns the registry
+    which provides access to all available sandbox types.
+    """
+    registry = get_sandbox_registry()
+    if registry is None:
+        raise RuntimeError('Sandbox registry not initialized')
+    yield registry
 
 
-def get_sandbox_spec_service(
+@asynccontextmanager
+async def get_sandbox_spec_service(
     state: InjectorState, request: Request | None = None
-) -> AsyncContextManager[SandboxSpecService]:
-    injector = get_global_config().sandbox_spec
-    assert injector is not None
-    return injector.context(state, request)
+) -> AsyncGenerator[SandboxSpecService, None]:
+    """Get the sandbox spec service for spec operations.
+
+    This function is maintained for API compatibility - it returns an adapter
+    that provides specs from all registered sandbox types.
+    """
+    registry = get_sandbox_registry()
+    if registry is None:
+        raise RuntimeError('Sandbox registry not initialized')
+
+    class RegistrySpecAdapter:
+        def __init__(self, registry: SandboxRegistry):
+            self._registry = registry
+
+        async def search_sandbox_specs(self, page_id=None, limit=100):
+            return await self._registry.search_all_specs(page_id=page_id, limit=limit)
+
+        async def get_sandbox_spec(self, spec_id: str):
+            return await self._registry.get_spec(spec_id)
+
+        async def batch_get_sandbox_specs(self, spec_ids: list[str]):
+            return [await self.get_sandbox_spec(sid) for sid in spec_ids]
+
+    yield RegistrySpecAdapter(registry)  # type: ignore
+
+
+def get_sandbox_registry() -> SandboxRegistry | None:
+    """Get the sandbox registry if configured.
+
+    The registry provides unified access to all sandbox types (Docker, Firecracker, etc.)
+    and their specs. Use this instead of separate sandbox_service and sandbox_spec_service
+    when you need to work with multiple sandbox types.
+    """
+    return _sandbox_registry
+
+
+def set_sandbox_registry(registry: SandboxRegistry | None) -> None:
+    """Set the sandbox registry.
+
+    Called by the lifespan service during app startup.
+    """
+    global _sandbox_registry
+    _sandbox_registry = registry
+
+
+def get_sandbox(sandbox_type: 'SandboxType') -> Sandbox | None:
+    """Get a specific sandbox implementation by type.
+
+    Args:
+        sandbox_type: The type of sandbox to get (DOCKER, FIRECRACKER, etc.)
+
+    Returns:
+        The Sandbox implementation, or None if not available.
+    """
+    registry = get_sandbox_registry()
+    if registry is None:
+        return None
+    return registry.get(sandbox_type)
+
+
+# Import here to avoid circular import at module level
+from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
 
 
 def get_app_conversation_info_service(
@@ -495,15 +451,57 @@ def depends_event_callback_service():
 
 
 def depends_sandbox_service():
-    injector = get_global_config().sandbox
-    assert injector is not None
-    return Depends(injector.depends)
+    """Return a FastAPI dependency for sandbox operations.
+
+    Returns the registry which provides all available sandbox types.
+    """
+
+    async def _get_sandbox_service():
+        registry = get_sandbox_registry()
+        if registry is None:
+            raise RuntimeError('Sandbox registry not initialized')
+        yield registry
+
+    return Depends(_get_sandbox_service)
 
 
 def depends_sandbox_spec_service():
-    injector = get_global_config().sandbox_spec
-    assert injector is not None
-    return Depends(injector.depends)
+    """Return a FastAPI dependency for sandbox spec operations.
+
+    Returns specs from the registry which includes all available sandbox types.
+    """
+    from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfoPage
+
+    class RegistrySpecAdapter:
+        """Adapts SandboxRegistry to SandboxSpecService interface for spec operations."""
+
+        def __init__(self, registry: SandboxRegistry):
+            self._registry = registry
+
+        async def search_sandbox_specs(
+            self, page_id: str | None = None, limit: int = 100
+        ) -> SandboxSpecInfoPage:
+            return await self._registry.search_all_specs(page_id=page_id, limit=limit)
+
+        async def get_sandbox_spec(self, spec_id: str) -> 'SandboxSpecInfo | None':
+            from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
+
+            return await self._registry.get_spec(spec_id)
+
+        async def batch_get_sandbox_specs(
+            self, spec_ids: list[str]
+        ) -> list['SandboxSpecInfo | None']:
+            from openhands.app_server.sandbox.sandbox_spec_models import SandboxSpecInfo
+
+            return [await self.get_sandbox_spec(sid) for sid in spec_ids]
+
+    async def _get_sandbox_spec_service():
+        registry = get_sandbox_registry()
+        if registry is None:
+            raise RuntimeError('Sandbox registry not initialized')
+        yield RegistrySpecAdapter(registry)
+
+    return Depends(_get_sandbox_spec_service)
 
 
 def depends_app_conversation_info_service():

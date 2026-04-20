@@ -10,6 +10,7 @@ from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.services.injector import Injector
@@ -60,17 +61,17 @@ class SandboxService(ABC):
     @abstractmethod
     async def start_sandbox(
         self,
-        sandbox_spec_id: str | None = None,
-        sandbox_id: str | None = None,
-        extra_env: dict[str, str] | None = None,
+        params: SandboxStartParams | None = None,
     ) -> SandboxInfo:
         """Begin the process of starting a sandbox.
 
-        Return the info on the new sandbox. If no spec is selected, use the default.
-        If sandbox_id is provided, it will be used as the sandbox identifier instead
-        of generating a random one.
-        If extra_env is provided, these environment variables will be merged into
-        the sandbox's environment (in addition to those from the sandbox spec).
+        Args:
+            params: Start parameters. If None, uses defaults.
+                    Use DockerSandboxStartParams or FirecrackerSandboxStartParams
+                    to pass sandbox-type-specific parameters.
+
+        Returns:
+            Info on the new sandbox.
         """
 
     @abstractmethod

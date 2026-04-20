@@ -28,6 +28,7 @@ from openhands.app_server.sandbox.sandbox_models import (
     ExposedUrl,
     SandboxInfo,
     SandboxPage,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
@@ -293,20 +294,20 @@ class ProcessSandboxService(SandboxService):
 
     async def start_sandbox(
         self,
-        sandbox_spec_id: str | None = None,
-        sandbox_id: str | None = None,
-        extra_env: dict[str, str] | None = None,
+        params: SandboxStartParams | None = None,
     ) -> SandboxInfo:
         """Start a new sandbox."""
         # Note: extra_env is accepted but not used in process sandbox service
         # as process sandboxes inherit the parent environment
+        if params is None:
+            params = SandboxStartParams()
 
         # Get sandbox spec
-        if sandbox_spec_id is None:
+        if params.sandbox_spec_id is None:
             sandbox_spec = await self.sandbox_spec_service.get_default_sandbox_spec()
         else:
             sandbox_spec_maybe = await self.sandbox_spec_service.get_sandbox_spec(
-                sandbox_spec_id
+                params.sandbox_spec_id
             )
             if sandbox_spec_maybe is None:
                 raise ValueError('Sandbox Spec not found')
@@ -314,6 +315,7 @@ class ProcessSandboxService(SandboxService):
 
         # Generate unique sandbox ID and session API key
         # Use provided sandbox_id if available, otherwise generate a random one
+        sandbox_id = params.sandbox_id
         if sandbox_id is None:
             sandbox_id = base62.encodebytes(os.urandom(16))
         session_api_key = base62.encodebytes(os.urandom(32))

@@ -65,16 +65,16 @@ from openhands.app_server.event_callback.set_title_callback_processor import (
 from openhands.app_server.pending_messages.pending_message_service import (
     PendingMessageService,
 )
-from openhands.app_server.sandbox.composite_sandbox_service import (
-    CompositeSandboxService,
-)
 from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxService
 from openhands.app_server.sandbox.firecracker_sandbox_service import (
     FirecrackerSandboxService,
 )
+from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
+    FirecrackerSandboxStartParams,
     SandboxInfo,
+    SandboxStartParams,
     SandboxStatus,
 )
 from openhands.app_server.sandbox.sandbox_service import (
@@ -143,7 +143,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
     app_conversation_start_task_service: AppConversationStartTaskService
     event_callback_service: EventCallbackService
     event_service: EventService
-    sandbox_service: SandboxService
+    # Can be either old SandboxService or new SandboxRegistry
+    sandbox_service: SandboxService | SandboxRegistry
     sandbox_spec_service: SandboxSpecService
     jwt_service: JwtService
     pending_message_service: PendingMessageService
@@ -722,11 +723,24 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 # Get extra environment variables (SSH keys, etc.)
                 extra_env = await self._get_extra_env()
 
-                sandbox = await self.sandbox_service.start_sandbox(
-                    sandbox_spec_id=task.request.sandbox_spec_id,
-                    sandbox_id=sandbox_id_str,
-                    extra_env=extra_env or None,
-                )
+                # Build sandbox start params
+                # Use FirecrackerSandboxStartParams if storage size is specified
+                params: SandboxStartParams
+                if task.request.fc_storage_size_gb is not None:
+                    params = FirecrackerSandboxStartParams(
+                        sandbox_spec_id=task.request.sandbox_spec_id,
+                        sandbox_id=sandbox_id_str,
+                        extra_env=extra_env or None,
+                        storage_size_gb=task.request.fc_storage_size_gb,
+                    )
+                else:
+                    params = SandboxStartParams(
+                        sandbox_spec_id=task.request.sandbox_spec_id,
+                        sandbox_id=sandbox_id_str,
+                        extra_env=extra_env or None,
+                    )
+
+                sandbox = await self.sandbox_service.start_sandbox(params)
             task.sandbox_id = sandbox.id
         else:
             sandbox_info = await self.sandbox_service.get_sandbox(
@@ -993,9 +1007,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
     async def _get_internal_url_for_sandbox(self, sandbox: SandboxInfo) -> str | None:
         """Get the internal URL for callbacks based on sandbox type.
 
-        This handles the case where CompositeSandboxService is used and the
-        sandbox could be either Docker or Firecracker. Each sandbox type needs
-        a different internal URL:
+        Different sandbox types need different internal URLs:
         - Docker: http://host.docker.internal:{port}
         - Firecracker: http://{per_vm_gateway_ip}:{port}
 
@@ -1017,11 +1029,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         if sandbox_spec and sandbox_spec.type == SandboxType.FIRECRACKER:
             # Firecracker sandbox - get the per-VM gateway IP from the daemon
             fc_service: FirecrackerSandboxService | None = None
-            if isinstance(self.sandbox_service, CompositeSandboxService):
-                if isinstance(
-                    self.sandbox_service.firecracker_service, FirecrackerSandboxService
-                ):
-                    fc_service = self.sandbox_service.firecracker_service
+            if isinstance(self.sandbox_service, SandboxRegistry):
+                fc_sandbox = self.sandbox_service.get(SandboxType.FIRECRACKER)
+                # The adapter wraps the actual service
+                if fc_sandbox and hasattr(fc_sandbox, 'service'):
+                    if isinstance(fc_sandbox.service, FirecrackerSandboxService):
+                        fc_service = fc_sandbox.service
             elif isinstance(self.sandbox_service, FirecrackerSandboxService):
                 fc_service = self.sandbox_service
 
@@ -2108,10 +2121,16 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             get_httpx_client,
             get_jwt_service,
             get_pending_message_service,
+            get_sandbox_registry,
             get_sandbox_service,
             get_sandbox_spec_service,
             get_user_context,
         )
+
+        config = get_global_config()
+
+        # Check if registry is available (preferred)
+        registry = get_sandbox_registry()
 
         async with (
             get_user_context(state, request) as user_context,
@@ -2134,7 +2153,11 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 access_token_hard_timeout = timedelta(
                     seconds=float(self.access_token_hard_timeout)
                 )
-            config = get_global_config()
+
+            # Use registry if available, otherwise fall back to individual services
+            effective_sandbox_service: SandboxService | SandboxRegistry = (
+                registry if registry is not None else sandbox_service
+            )
 
             # If no web url has been set and we are using docker, we can use host.docker.internal
             web_url = config.web_url
@@ -2147,16 +2170,18 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # with the external web_url (e.g., self-signed certs) do not apply.
             internal_web_url: str | None = None
 
-            # Extract sandbox services from composite or direct service
+            # Extract sandbox services from registry or direct service
             docker_service: DockerSandboxService | None = None
             firecracker_service: FirecrackerSandboxService | None = None
-            if isinstance(sandbox_service, CompositeSandboxService):
-                if isinstance(sandbox_service.docker_service, DockerSandboxService):
-                    docker_service = sandbox_service.docker_service
-                if isinstance(
-                    sandbox_service.firecracker_service, FirecrackerSandboxService
-                ):
-                    firecracker_service = sandbox_service.firecracker_service
+            if registry is not None:
+                docker_sandbox = registry.get(SandboxType.DOCKER)
+                if docker_sandbox and hasattr(docker_sandbox, 'service'):
+                    if isinstance(docker_sandbox.service, DockerSandboxService):
+                        docker_service = docker_sandbox.service
+                fc_sandbox = registry.get(SandboxType.FIRECRACKER)
+                if fc_sandbox and hasattr(fc_sandbox, 'service'):
+                    if isinstance(fc_sandbox.service, FirecrackerSandboxService):
+                        firecracker_service = fc_sandbox.service
             elif isinstance(sandbox_service, DockerSandboxService):
                 docker_service = sandbox_service
             elif isinstance(sandbox_service, FirecrackerSandboxService):
@@ -2196,7 +2221,7 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             yield LiveStatusAppConversationService(
                 init_git_in_empty_workspace=self.init_git_in_empty_workspace,
                 user_context=user_context,
-                sandbox_service=sandbox_service,
+                sandbox_service=effective_sandbox_service,
                 sandbox_spec_service=sandbox_spec_service,
                 app_conversation_info_service=app_conversation_info_service,
                 app_conversation_start_task_service=app_conversation_start_task_service,

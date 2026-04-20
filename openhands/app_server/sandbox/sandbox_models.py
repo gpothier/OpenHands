@@ -1,9 +1,43 @@
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
 
 from openhands.agent_server.utils import utc_now
+
+
+@dataclass
+class SandboxStartParams:
+    """Base class for sandbox start parameters.
+
+    Contains common parameters for starting any type of sandbox.
+    Subclasses can add sandbox-type-specific parameters.
+    """
+
+    sandbox_spec_id: str | None = None
+    sandbox_id: str | None = None
+    extra_env: dict[str, str] | None = None
+
+
+@dataclass
+class DockerSandboxStartParams(SandboxStartParams):
+    """Docker-specific sandbox start parameters.
+
+    Currently no additional parameters beyond the base class.
+    """
+
+    pass
+
+
+@dataclass
+class FirecrackerSandboxStartParams(SandboxStartParams):
+    """Firecracker-specific sandbox start parameters."""
+
+    storage_size_gb: int | None = field(
+        default=None,
+        metadata={'description': 'Storage size in GB for the VM root filesystem'},
+    )
 
 
 class SandboxStatus(Enum):
