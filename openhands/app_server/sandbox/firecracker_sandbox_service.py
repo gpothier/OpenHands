@@ -203,7 +203,8 @@ class DaemonClient:
         if exposed_ports:
             body['exposed_ports'] = exposed_ports
         if disk_size_gb:
-            body['disk_size_gb'] = disk_size_gb
+            # Convert GB to bytes for the daemon API
+            body['disk_size_bytes'] = disk_size_gb * 1024 * 1024 * 1024
         response = self._send_request('POST', '/vms', body, timeout=1800)
         if response.get('error'):
             raise SandboxError(response['error'])
