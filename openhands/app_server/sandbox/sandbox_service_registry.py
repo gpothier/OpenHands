@@ -285,6 +285,25 @@ class SandboxRegistry:
                 return result
         return None
 
+    async def get_vscode_internal_url(self, short_sandbox_id: str) -> str | None:
+        """Return the host-local VS Code base URL for the given short sandbox ID.
+
+        Used by the vscode proxy route to forward browser traffic to the correct
+        container port. Delegates to the appropriate sandbox adapter.
+
+        Args:
+            short_sandbox_id: The sandbox ID without the container-name prefix.
+
+        Returns:
+            A string like ``http://localhost:43211``, or None if not proxiable.
+        """
+        # Try each sandbox service to find one that handles this ID
+        for sandbox in self.sandboxes.values():
+            result = await sandbox.service.get_vscode_internal_url(short_sandbox_id)
+            if result:
+                return result
+        return None
+
     async def wait_for_sandbox_running(
         self,
         sandbox_id: str,
