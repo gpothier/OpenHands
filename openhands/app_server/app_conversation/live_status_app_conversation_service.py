@@ -728,14 +728,14 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 params: SandboxStartParams
                 if (
                     task.request.fc_storage_size_gb is not None
-                    or task.request.fc_ram_size_gb is not None
+                    or task.request.fc_ram_size_mib is not None
                 ):
                     params = FirecrackerSandboxStartParams(
                         sandbox_spec_id=task.request.sandbox_spec_id,
                         sandbox_id=sandbox_id_str,
                         extra_env=extra_env or None,
                         storage_size_gb=task.request.fc_storage_size_gb,
-                        ram_size_gb=task.request.fc_ram_size_gb,
+                        ram_size_mib=task.request.fc_ram_size_mib,
                     )
                 else:
                     params = SandboxStartParams(

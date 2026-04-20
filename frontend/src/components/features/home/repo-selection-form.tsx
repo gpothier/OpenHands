@@ -46,7 +46,7 @@ export function RepositorySelectionForm({
     isPending,
     isSuccess,
   } = useCreateConversation();
-  const { selectedSpecId, selectedStorageSizeGb, selectedRamSizeGb } =
+  const { selectedSpecId, selectedStorageSizeGb, selectedRamSizeMib } =
     useSelectedSandboxSpec();
 
   const isCreatingConversationElsewhere = useIsCreatingConversation();
@@ -197,8 +197,8 @@ export function RepositorySelectionForm({
             selectedSpecId,
             ", fcStorageSizeGb =",
             selectedStorageSizeGb,
-            ", fcRamSizeGb =",
-            selectedRamSizeGb,
+            ", fcRamSizeMib =",
+            selectedRamSizeMib,
           );
 
           // Persist the repository to recent repositories when launching
@@ -215,7 +215,7 @@ export function RepositorySelectionForm({
               },
               sandboxSpecId: selectedSpecId || undefined,
               fcStorageSizeGb: selectedStorageSizeGb || undefined,
-              fcRamSizeGb: selectedRamSizeGb || undefined,
+              fcRamSizeMib: selectedRamSizeMib || undefined,
             },
             {
               onSuccess: (data) =>

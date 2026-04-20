@@ -131,10 +131,10 @@ function AppSettingsScreen() {
 
     // Parse the RAM size input value
     const fcRamSizeValue = formData.get("fc-ram-size-input")?.toString();
-    const defaultFcRamSizeGb = fcRamSizeValue
-      ? parseInt(fcRamSizeValue, 10) || DEFAULT_SETTINGS.default_fc_ram_size_gb
-      : (settings?.default_fc_ram_size_gb ??
-        DEFAULT_SETTINGS.default_fc_ram_size_gb);
+    const defaultFcRamSizeMib = fcRamSizeValue
+      ? parseInt(fcRamSizeValue, 10) || DEFAULT_SETTINGS.default_fc_ram_size_mib
+      : (settings?.default_fc_ram_size_mib ??
+        DEFAULT_SETTINGS.default_fc_ram_size_mib);
 
     saveSettings(
       {
@@ -149,7 +149,7 @@ function AppSettingsScreen() {
         git_user_email: gitUserEmail,
         default_sandbox_spec_id: defaultSandboxSpecId,
         default_fc_storage_size_gb: defaultFcStorageSizeGb,
-        default_fc_ram_size_gb: defaultFcRamSizeGb,
+        default_fc_ram_size_mib: defaultFcRamSizeMib,
       },
       {
         onSuccess: () => {
@@ -399,14 +399,14 @@ function AppSettingsScreen() {
                 type="number"
                 label={t(I18nKey.SETTINGS$RAM_SIZE)}
                 defaultValue={
-                  settings.default_fc_ram_size_gb?.toString() ||
-                  DEFAULT_SETTINGS.default_fc_ram_size_gb?.toString() ||
-                  "2"
+                  settings.default_fc_ram_size_mib?.toString() ||
+                  DEFAULT_SETTINGS.default_fc_ram_size_mib?.toString() ||
+                  "2048"
                 }
                 onChange={checkIfFcRamSizeHasChanged}
-                placeholder={t(I18nKey.SETTINGS$RAM_SIZE_GB)}
-                min={1}
-                step={1}
+                placeholder={t(I18nKey.SETTINGS$RAM_SIZE_MIB)}
+                min={512}
+                step={256}
                 className="w-full max-w-[680px]"
               />
               <p className="text-xs text-[#A3A3A3]">

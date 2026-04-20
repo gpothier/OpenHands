@@ -91,6 +91,6 @@ export type Settings = {
   default_sandbox_spec_id?: string | null;
   // Default storage size in GB for Firecracker sandboxes
   default_fc_storage_size_gb?: number | null;
-  // Default RAM size in GB for Firecracker sandboxes
-  default_fc_ram_size_gb?: number | null;
+  // Default RAM size in MiB for Firecracker sandboxes
+  default_fc_ram_size_mib?: number | null;
 };

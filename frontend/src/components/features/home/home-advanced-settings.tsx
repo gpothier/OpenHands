@@ -22,8 +22,8 @@ export function HomeAdvancedSettings() {
     setSelectedSpecId,
     selectedStorageSizeGb,
     setSelectedStorageSizeGb,
-    selectedRamSizeGb,
-    setSelectedRamSizeGb,
+    selectedRamSizeMib,
+    setSelectedRamSizeMib,
   } = useSelectedSandboxSpec();
 
   // Determine if the selected sandbox type is Firecracker
@@ -48,9 +48,9 @@ export function HomeAdvancedSettings() {
   };
 
   const handleRamSizeChange = (value: string) => {
-    const sizeGb = parseInt(value, 10);
-    if (!Number.isNaN(sizeGb) && sizeGb >= 1) {
-      setSelectedRamSizeGb(sizeGb);
+    const sizeMib = parseInt(value, 10);
+    if (!Number.isNaN(sizeMib) && sizeMib >= 512) {
+      setSelectedRamSizeMib(sizeMib);
     }
   };
 
@@ -117,14 +117,14 @@ export function HomeAdvancedSettings() {
                     type="number"
                     label={t(I18nKey.SETTINGS$RAM_SIZE)}
                     defaultValue={
-                      selectedRamSizeGb?.toString() ||
-                      DEFAULT_SETTINGS.default_fc_ram_size_gb?.toString() ||
-                      "2"
+                      selectedRamSizeMib?.toString() ||
+                      DEFAULT_SETTINGS.default_fc_ram_size_mib?.toString() ||
+                      "2048"
                     }
                     onChange={handleRamSizeChange}
-                    placeholder={t(I18nKey.SETTINGS$RAM_SIZE_GB)}
-                    min={1}
-                    step={1}
+                    placeholder={t(I18nKey.SETTINGS$RAM_SIZE_MIB)}
+                    min={512}
+                    step={256}
                     className="w-full"
                   />
                   <p className="text-xs text-[#A3A3A3]">
