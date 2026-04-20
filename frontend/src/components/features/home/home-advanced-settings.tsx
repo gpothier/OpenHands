@@ -22,6 +22,8 @@ export function HomeAdvancedSettings() {
     setSelectedSpecId,
     selectedStorageSizeGb,
     setSelectedStorageSizeGb,
+    selectedRamSizeMib,
+    setSelectedRamSizeMib,
   } = useSelectedSandboxSpec();
 
   // Determine if the selected sandbox type is Firecracker
@@ -42,6 +44,13 @@ export function HomeAdvancedSettings() {
     const sizeGb = parseInt(value, 10);
     if (!Number.isNaN(sizeGb) && sizeGb >= 8) {
       setSelectedStorageSizeGb(sizeGb);
+    }
+  };
+
+  const handleRamSizeChange = (value: string) => {
+    const sizeMib = parseInt(value, 10);
+    if (!Number.isNaN(sizeMib) && sizeMib >= 512) {
+      setSelectedRamSizeMib(sizeMib);
     }
   };
 
@@ -79,26 +88,49 @@ export function HomeAdvancedSettings() {
               onSelectionChange={setSelectedSpecId}
             />
             {isFirecrackerSelected && (
-              <div className="flex flex-col gap-2">
-                <SettingsInput
-                  testId="home-fc-storage-size"
-                  name="home-fc-storage-size"
-                  type="number"
-                  label={t(I18nKey.SETTINGS$STORAGE_SIZE)}
-                  defaultValue={
-                    selectedStorageSizeGb?.toString() ||
-                    DEFAULT_SETTINGS.default_fc_storage_size_gb?.toString() ||
-                    "16"
-                  }
-                  onChange={handleStorageSizeChange}
-                  placeholder={t(I18nKey.SETTINGS$STORAGE_SIZE_GB)}
-                  min={8}
-                  step={1}
-                  className="w-full"
-                />
-                <p className="text-xs text-[#A3A3A3]">
-                  {t(I18nKey.SETTINGS$STORAGE_SIZE_DESCRIPTION)}
-                </p>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <SettingsInput
+                    testId="home-fc-storage-size"
+                    name="home-fc-storage-size"
+                    type="number"
+                    label={t(I18nKey.SETTINGS$STORAGE_SIZE)}
+                    defaultValue={
+                      selectedStorageSizeGb?.toString() ||
+                      DEFAULT_SETTINGS.default_fc_storage_size_gb?.toString() ||
+                      "16"
+                    }
+                    onChange={handleStorageSizeChange}
+                    placeholder={t(I18nKey.SETTINGS$STORAGE_SIZE_GB)}
+                    min={8}
+                    step={1}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-[#A3A3A3]">
+                    {t(I18nKey.SETTINGS$STORAGE_SIZE_DESCRIPTION)}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <SettingsInput
+                    testId="home-fc-ram-size"
+                    name="home-fc-ram-size"
+                    type="number"
+                    label={t(I18nKey.SETTINGS$RAM_SIZE)}
+                    defaultValue={
+                      selectedRamSizeMib?.toString() ||
+                      DEFAULT_SETTINGS.default_fc_ram_size_mib?.toString() ||
+                      "2048"
+                    }
+                    onChange={handleRamSizeChange}
+                    placeholder={t(I18nKey.SETTINGS$RAM_SIZE_MIB)}
+                    min={512}
+                    step={256}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-[#A3A3A3]">
+                    {t(I18nKey.SETTINGS$RAM_SIZE_DESCRIPTION)}
+                  </p>
+                </div>
               </div>
             )}
           </div>

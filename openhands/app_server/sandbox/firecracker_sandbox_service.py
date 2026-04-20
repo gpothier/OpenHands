@@ -176,6 +176,7 @@ class DaemonClient:
         working_dir: str | None = None,
         exposed_ports: list[int] | None = None,
         disk_size_gb: int | None = None,
+        ram_size_mib: int | None = None,
     ) -> dict:
         """Create a new VM.
         
@@ -188,6 +189,7 @@ class DaemonClient:
             working_dir: Working directory for the entrypoint
             exposed_ports: List of VM ports to expose on the host (returns port_mappings)
             disk_size_gb: Storage size in GB for the VM's root filesystem
+            ram_size_mib: RAM size in MiB for the VM (default: 1024 MiB if not specified)
         """
         body = {
             'vm_id': vm_id,
@@ -205,6 +207,8 @@ class DaemonClient:
         if disk_size_gb:
             # Convert GB to bytes for the daemon API
             body['disk_size_bytes'] = disk_size_gb * 1024 * 1024 * 1024
+        if ram_size_mib:
+            body['mem_size_mib'] = ram_size_mib
         response = self._send_request('POST', '/vms', body, timeout=1800)
         if response.get('error'):
             raise SandboxError(response['error'])
@@ -563,8 +567,10 @@ class FirecrackerSandboxService(SandboxService):
 
         # Extract Firecracker-specific parameters
         storage_size_gb: int | None = None
+        ram_size_mib: int | None = None
         if isinstance(params, FirecrackerSandboxStartParams):
             storage_size_gb = params.storage_size_gb
+            ram_size_mib = params.ram_size_mib
 
         vm_id = params.sandbox_id or f'fc-{secrets.token_hex(8)}'
         session_api_key = secrets.token_urlsafe(32)
@@ -621,6 +627,7 @@ class FirecrackerSandboxService(SandboxService):
             working_dir=working_dir,
             exposed_ports=ports_to_expose,
             disk_size_gb=storage_size_gb,
+            ram_size_mib=ram_size_mib,
         )
 
         vm = FirecrackerVM.from_daemon_response(response)

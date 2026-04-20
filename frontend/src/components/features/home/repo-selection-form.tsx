@@ -46,7 +46,8 @@ export function RepositorySelectionForm({
     isPending,
     isSuccess,
   } = useCreateConversation();
-  const { selectedSpecId, selectedStorageSizeGb } = useSelectedSandboxSpec();
+  const { selectedSpecId, selectedStorageSizeGb, selectedRamSizeMib } =
+    useSelectedSandboxSpec();
 
   const isCreatingConversationElsewhere = useIsCreatingConversation();
 
@@ -190,12 +191,14 @@ export function RepositorySelectionForm({
           isLoadingSettings
         }
         onClick={() => {
-          // Debug: log the selected spec ID and storage size
+          // Debug: log the selected spec ID, storage size, and RAM size
           console.log(
             "RepositorySelectionForm onClick: passing sandboxSpecId =",
             selectedSpecId,
             ", fcStorageSizeGb =",
             selectedStorageSizeGb,
+            ", fcRamSizeMib =",
+            selectedRamSizeMib,
           );
 
           // Persist the repository to recent repositories when launching
@@ -212,6 +215,7 @@ export function RepositorySelectionForm({
               },
               sandboxSpecId: selectedSpecId || undefined,
               fcStorageSizeGb: selectedStorageSizeGb || undefined,
+              fcRamSizeMib: selectedRamSizeMib || undefined,
             },
             {
               onSuccess: (data) =>

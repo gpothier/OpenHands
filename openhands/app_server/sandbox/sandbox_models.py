@@ -38,6 +38,10 @@ class FirecrackerSandboxStartParams(SandboxStartParams):
         default=None,
         metadata={'description': 'Storage size in GB for the VM root filesystem'},
     )
+    ram_size_mib: int | None = field(
+        default=None,
+        metadata={'description': 'RAM size in MiB for the VM (default: 2048 MiB)'},
+    )
 
 
 class SandboxStatus(Enum):

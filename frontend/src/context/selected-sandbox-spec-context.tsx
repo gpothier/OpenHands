@@ -13,6 +13,8 @@ interface SelectedSandboxSpecContextType {
   setSelectedSpecId: (specId: string | null) => void;
   selectedStorageSizeGb: number | null;
   setSelectedStorageSizeGb: (sizeGb: number | null) => void;
+  selectedRamSizeMib: number | null;
+  setSelectedRamSizeMib: (sizeMib: number | null) => void;
 }
 
 const SelectedSandboxSpecContext =
@@ -28,14 +30,19 @@ export function SelectedSandboxSpecProvider({
   const [selectedStorageSizeGb, setSelectedStorageSizeGb] = useState<
     number | null
   >(null);
+  const [selectedRamSizeMib, setSelectedRamSizeMib] = useState<number | null>(
+    null,
+  );
 
   // Debug: log settings and state
   console.log("SelectedSandboxSpecProvider:", {
     "settings?.default_sandbox_spec_id": settings?.default_sandbox_spec_id,
     "settings?.default_fc_storage_size_gb":
       settings?.default_fc_storage_size_gb,
+    "settings?.default_fc_ram_size_mib": settings?.default_fc_ram_size_mib,
     selectedSpecId,
     selectedStorageSizeGb,
+    selectedRamSizeMib,
   });
 
   // Initialize with default from settings
@@ -44,8 +51,10 @@ export function SelectedSandboxSpecProvider({
       "settings?.default_sandbox_spec_id": settings?.default_sandbox_spec_id,
       "settings?.default_fc_storage_size_gb":
         settings?.default_fc_storage_size_gb,
+      "settings?.default_fc_ram_size_mib": settings?.default_fc_ram_size_mib,
       selectedSpecId,
       selectedStorageSizeGb,
+      selectedRamSizeMib,
     });
     if (settings?.default_sandbox_spec_id && selectedSpecId === null) {
       console.log(
@@ -63,11 +72,22 @@ export function SelectedSandboxSpecProvider({
       console.log("Setting selectedStorageSizeGb to:", defaultSize);
       setSelectedStorageSizeGb(defaultSize);
     }
+    // Initialize RAM size with default from settings
+    if (selectedRamSizeMib === null) {
+      const defaultRam =
+        settings?.default_fc_ram_size_mib ??
+        DEFAULT_SETTINGS.default_fc_ram_size_mib ??
+        2048;
+      console.log("Setting selectedRamSizeMib to:", defaultRam);
+      setSelectedRamSizeMib(defaultRam);
+    }
   }, [
     settings?.default_sandbox_spec_id,
     settings?.default_fc_storage_size_gb,
+    settings?.default_fc_ram_size_mib,
     selectedSpecId,
     selectedStorageSizeGb,
+    selectedRamSizeMib,
   ]);
 
   const contextValue = useMemo(
@@ -76,8 +96,10 @@ export function SelectedSandboxSpecProvider({
       setSelectedSpecId,
       selectedStorageSizeGb,
       setSelectedStorageSizeGb,
+      selectedRamSizeMib,
+      setSelectedRamSizeMib,
     }),
-    [selectedSpecId, selectedStorageSizeGb],
+    [selectedSpecId, selectedStorageSizeGb, selectedRamSizeMib],
   );
 
   return (

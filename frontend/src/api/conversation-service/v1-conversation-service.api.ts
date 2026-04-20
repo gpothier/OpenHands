@@ -74,6 +74,7 @@ class V1ConversationService {
     llm_model?: string,
     sandbox_spec_id?: string,
     fc_storage_size_gb?: number,
+    fc_ram_size_mib?: number,
   ): Promise<V1AppConversationStartTask> {
     // Debug: log sandbox_spec_id parameter
     console.log(
@@ -81,6 +82,8 @@ class V1ConversationService {
       sandbox_spec_id,
       ", fc_storage_size_gb =",
       fc_storage_size_gb,
+      ", fc_ram_size_mib =",
+      fc_ram_size_mib,
     );
 
     const body: V1AppConversationStartRequest = {
@@ -97,6 +100,7 @@ class V1ConversationService {
       llm_model: llm_model || null,
       sandbox_spec_id: sandbox_spec_id || null,
       fc_storage_size_gb: fc_storage_size_gb || null,
+      fc_ram_size_mib: fc_ram_size_mib || null,
     };
 
     console.log("V1ConversationService.createConversation: body =", body);

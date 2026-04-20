@@ -84,6 +84,10 @@ class Settings(BaseModel):
     )
     # Default sandbox spec ID for new conversations (e.g., "firecracker::image:tag")
     default_sandbox_spec_id: str | None = None
+    # Default storage size in GB for Firecracker sandboxes (default: 16GB)
+    default_fc_storage_size_gb: int | None = None
+    # Default RAM size in MiB for Firecracker sandboxes (default: 2048 MiB)
+    default_fc_ram_size_mib: int | None = None
     # SSH public keys for passwordless SSH access to sandboxes
     ssh_public_keys: list[SSHPublicKey] = Field(default_factory=list)
 
