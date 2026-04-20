@@ -318,13 +318,17 @@ class SandboxRegistry:
         self, sandbox: SandboxInfo, httpx_client: httpx.AsyncClient
     ) -> bool:
         """Check if the agent server is responding to health checks."""
+        from openhands.app_server.sandbox.sandbox_models import AGENT_SERVER
+
         for url in sandbox.exposed_urls:
-            if url.name == 'agent':
+            if url.name == AGENT_SERVER:
                 try:
+                    # Use internal_url if available (for proxy setups), else use url
+                    check_url = url.internal_url or url.url
                     response = await httpx_client.get(
-                        f'{url.url}/alive', timeout=5.0
+                        f'{check_url.rstrip("/")}/alive', timeout=5.0
                     )
-                    return response.status_code == 200
+                    return response.is_success
                 except Exception:
                     return False
         return False
