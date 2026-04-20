@@ -266,6 +266,25 @@ class SandboxRegistry:
         )
         return list(results)
 
+    async def get_agent_server_internal_url(self, short_sandbox_id: str) -> str | None:
+        """Return the host-local agent-server base URL for the given short sandbox ID.
+
+        Used by the agent proxy route to forward browser traffic to the correct
+        container port. Delegates to the appropriate sandbox adapter.
+
+        Args:
+            short_sandbox_id: The sandbox ID without the container-name prefix.
+
+        Returns:
+            A string like ``http://localhost:43210``, or None if not proxiable.
+        """
+        # Try each sandbox service to find one that handles this ID
+        for sandbox in self.sandboxes.values():
+            result = await sandbox.service.get_agent_server_internal_url(short_sandbox_id)
+            if result:
+                return result
+        return None
+
     async def wait_for_sandbox_running(
         self,
         sandbox_id: str,
