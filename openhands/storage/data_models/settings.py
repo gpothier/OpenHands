@@ -90,6 +90,10 @@ class Settings(BaseModel):
     default_fc_ram_size_mib: int | None = None
     # SSH public keys for passwordless SSH access to sandboxes
     ssh_public_keys: list[SSHPublicKey] = Field(default_factory=list)
+    # Whether to discover skills from all git repos in the workspace
+    discover_all_repos: bool = False
+    # Max depth for git repo discovery when discover_all_repos is enabled
+    skills_discovery_depth: int = 1
 
     model_config = ConfigDict(
         validate_assignment=True,
