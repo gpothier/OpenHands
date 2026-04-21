@@ -26,6 +26,9 @@ from openhands.app_server.sandbox.sandbox_spec_models import (
     SandboxSpecInfoPage,
     SandboxType,
 )
+from openhands.app_server.utils.docker_utils import (
+    replace_localhost_hostname_for_docker,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -363,6 +366,8 @@ class SandboxRegistry:
                 try:
                     # Use internal_url if available (for proxy setups), else use url
                     check_url = url.internal_url or url.url
+                    # When running in Docker, replace localhost with host.docker.internal
+                    check_url = replace_localhost_hostname_for_docker(check_url)
                     response = await httpx_client.get(
                         f'{check_url.rstrip("/")}/alive', timeout=5.0
                     )
