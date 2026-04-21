@@ -266,6 +266,7 @@ async def load_skills_from_agent_server(
     agent_server_url: str,
     session_api_key: str | None,
     project_dir: str,
+    workspace_base: str | None = None,
     org_config: OrgConfig | None = None,
     sandbox_config: SandboxConfig | None = None,
     load_public: bool = True,
@@ -283,6 +284,9 @@ async def load_skills_from_agent_server(
         agent_server_url: URL of the agent server (e.g., 'http://localhost:8000')
         session_api_key: Session API key for authentication (optional)
         project_dir: Workspace directory path for project skills
+        workspace_base: Base workspace directory (e.g., /workspace/project).
+            When discover_all_repos=True, this is used as the search root
+            for discovering all git repositories.
         org_config: Organization skills configuration (optional)
         sandbox_config: Sandbox skills configuration (optional)
         load_public: Whether to load public skills (default: True)
@@ -290,7 +294,7 @@ async def load_skills_from_agent_server(
         load_project: Whether to load project skills (default: True)
         load_org: Whether to load organization skills (default: True)
         discover_all_repos: Whether to discover skills from all git repos
-            under project_dir (default: False)
+            under workspace_base (default: False)
 
     Returns:
         List of Skill objects merged from all sources.
@@ -304,6 +308,7 @@ async def load_skills_from_agent_server(
             'load_project': load_project,
             'load_org': load_org,
             'project_dir': project_dir,
+            'workspace_base': workspace_base,
             'org_config': org_config.model_dump() if org_config else None,
             'sandbox_config': sandbox_config.model_dump() if sandbox_config else None,
             'discover_all_repos': discover_all_repos,

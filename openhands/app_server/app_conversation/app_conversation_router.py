@@ -639,6 +639,7 @@ async def get_conversation_skills(
                 project_dir,
                 ctx.agent_server_url,
                 discover_all_repos=discover_all_repos,
+                workspace_base=ctx.sandbox_spec.working_dir,
             )
 
         logger.info(
