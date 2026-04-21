@@ -321,6 +321,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     remote_workspace=remote_workspace,
                     selected_repository=request.selected_repository,
                     plugins=request.plugins,
+                    discover_all_repos=request.discover_all_repos,
                 )
             )
 
@@ -1506,6 +1507,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         selected_repository: str | None,
         working_dir: str,
         plugins: list[PluginSpec] | None = None,
+        discover_all_repos: bool = False,
     ) -> StartConversationRequest:
         """Finalize the conversation request with skills and metadata.
 
@@ -1521,6 +1523,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             selected_repository: Optional repository name
             working_dir: Working directory path
             plugins: Optional list of plugin specifications to load
+            discover_all_repos: Whether to discover skills from all git repos
+                under working_dir (default: False)
 
         Returns:
             Complete StartConversationRequest ready for use
@@ -1539,6 +1543,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     selected_repository,
                     working_dir,
                     disabled_skills=user.disabled_skills,
+                    discover_all_repos=discover_all_repos,
                 )
             except Exception as e:
                 _logger.warning(f'Failed to load skills: {e}', exc_info=True)
@@ -1610,6 +1615,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         remote_workspace: AsyncRemoteWorkspace | None = None,
         selected_repository: str | None = None,
         plugins: list[PluginSpec] | None = None,
+        discover_all_repos: bool = False,
     ) -> StartConversationRequest:
         """Build a complete conversation request for a user.
 
@@ -1619,6 +1625,10 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         3. Creating an agent with appropriate context
         4. Finalizing the request with skills and metadata
         5. Passing plugins to the agent server for remote plugin loading
+
+        Args:
+            discover_all_repos: Whether to discover skills from all git repos
+                under working_dir (default: False)
         """
         user = await self.user_context.get_user_info()
 
@@ -1662,6 +1672,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             selected_repository,
             project_dir,
             plugins=plugins,
+            discover_all_repos=discover_all_repos,
         )
 
     async def _process_pending_messages(

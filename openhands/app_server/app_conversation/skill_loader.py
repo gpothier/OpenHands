@@ -272,6 +272,7 @@ async def load_skills_from_agent_server(
     load_user: bool = True,
     load_project: bool = True,
     load_org: bool = True,
+    discover_all_repos: bool = False,
 ) -> list[Skill]:
     """Load all skills from the agent-server.
 
@@ -288,6 +289,8 @@ async def load_skills_from_agent_server(
         load_user: Whether to load user skills (default: True)
         load_project: Whether to load project skills (default: True)
         load_org: Whether to load organization skills (default: True)
+        discover_all_repos: Whether to discover skills from all git repos
+            under project_dir (default: False)
 
     Returns:
         List of Skill objects merged from all sources.
@@ -303,6 +306,7 @@ async def load_skills_from_agent_server(
             'project_dir': project_dir,
             'org_config': org_config.model_dump() if org_config else None,
             'sandbox_config': sandbox_config.model_dump() if sandbox_config else None,
+            'discover_all_repos': discover_all_repos,
         }
 
         # Build headers

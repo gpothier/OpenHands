@@ -99,6 +99,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
         selected_repository: str | None,
         project_dir: str,
         agent_server_url: str,
+        discover_all_repos: bool = False,
     ) -> list[Skill]:
         """Load skills from all sources via the agent-server.
 
@@ -115,12 +116,17 @@ class AppConversationServiceBase(AppConversationService, ABC):
             selected_repository: Repository name or None
             project_dir: Project root directory (resolved via get_project_dir).
             agent_server_url: Agent-server URL (required)
+            discover_all_repos: Whether to discover skills from all git repos
+                under project_dir (default: False)
 
         Returns:
             List of merged Skill objects from all sources, or empty list on failure
         """
         try:
-            _logger.debug('Loading skills for V1 conversation via agent-server')
+            _logger.debug(
+                f'Loading skills for V1 conversation via agent-server '
+                f'(discover_all_repos={discover_all_repos})'
+            )
 
             if not agent_server_url:
                 _logger.warning('No agent-server URL available, cannot load skills')
@@ -143,6 +149,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
                 load_user=True,
                 load_project=True,
                 load_org=True,
+                discover_all_repos=discover_all_repos,
             )
 
             _logger.info(
@@ -212,6 +219,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
         selected_repository: str | None,
         project_dir: str,
         disabled_skills: list[str] | None = None,
+        discover_all_repos: bool = False,
     ):
         """Load all skills and update agent with them.
 
@@ -221,6 +229,8 @@ class AppConversationServiceBase(AppConversationService, ABC):
             selected_repository: Repository name or None (used for org config)
             project_dir: Project root directory (already resolved via get_project_dir).
             disabled_skills: Optional list of skill names to exclude
+            discover_all_repos: Whether to discover skills from all git repos
+                under project_dir (default: False)
 
         Returns:
             Updated agent with skills loaded into context
@@ -231,6 +241,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
             selected_repository,
             project_dir,
             agent_server_url,
+            discover_all_repos=discover_all_repos,
         )
 
         # Filter out disabled skills
@@ -276,6 +287,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
             task.request.selected_repository,
             project_dir,
             agent_server_url,
+            discover_all_repos=task.request.discover_all_repos,
         )
 
     async def _configure_git_user_settings(

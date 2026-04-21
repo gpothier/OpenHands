@@ -588,6 +588,7 @@ async def get_conversation_skills(
     ),
     sandbox_service: SandboxService = sandbox_service_dependency,
     sandbox_spec_service: SandboxSpecService = sandbox_spec_service_dependency,
+    user_context: UserContext = user_context_dependency,
 ) -> JSONResponse:
     """Get all skills associated with the conversation.
 
@@ -616,8 +617,15 @@ async def get_conversation_skills(
         if ctx is None:
             return JSONResponse(status_code=status.HTTP_200_OK, content={'skills': []})
 
+        # Get user settings for discover_all_repos
+        user_info = await user_context.get_user_info()
+        discover_all_repos = user_info.discover_all_repos
+
         # Load skills from all sources
-        logger.info(f'Loading skills for conversation {conversation_id}')
+        logger.info(
+            f'Loading skills for conversation {conversation_id} '
+            f'(discover_all_repos={discover_all_repos})'
+        )
 
         # Prefer the shared loader to avoid duplication; otherwise return empty list.
         all_skills: list = []
@@ -630,6 +638,7 @@ async def get_conversation_skills(
                 ctx.conversation.selected_repository,
                 project_dir,
                 ctx.agent_server_url,
+                discover_all_repos=discover_all_repos,
             )
 
         logger.info(
