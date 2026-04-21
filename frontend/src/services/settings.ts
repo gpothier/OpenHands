@@ -38,6 +38,8 @@ export const DEFAULT_SETTINGS: Settings = {
   default_sandbox_spec_id: null, // null means use the system default
   default_fc_storage_size_gb: 16, // Default 16GB for Firecracker sandboxes
   default_fc_ram_size_mib: 2048, // Default 2048 MiB RAM for Firecracker sandboxes
+  discover_all_repos: false, // Discover skills from all git repos in workspace
+  skills_discovery_depth: 1, // Max depth for git repo discovery
 };
 
 /**

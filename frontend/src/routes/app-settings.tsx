@@ -76,6 +76,10 @@ function AppSettingsScreen() {
   const [fcStorageSizeHasChanged, setFcStorageSizeHasChanged] =
     React.useState(false);
   const [fcRamSizeHasChanged, setFcRamSizeHasChanged] = React.useState(false);
+  const [discoverAllReposHasChanged, setDiscoverAllReposHasChanged] =
+    React.useState(false);
+  const [skillsDiscoveryDepthHasChanged, setSkillsDiscoveryDepthHasChanged] =
+    React.useState(false);
 
   const formAction = (formData: FormData) => {
     const languageLabel = formData.get("language-input")?.toString();
@@ -136,6 +140,19 @@ function AppSettingsScreen() {
       : (settings?.default_fc_ram_size_mib ??
         DEFAULT_SETTINGS.default_fc_ram_size_mib);
 
+    // Skills discovery settings
+    const discoverAllRepos =
+      formData.get("discover-all-repos-switch")?.toString() === "on";
+
+    const skillsDiscoveryDepthValue = formData
+      .get("skills-discovery-depth-input")
+      ?.toString();
+    const skillsDiscoveryDepth = skillsDiscoveryDepthValue
+      ? parseInt(skillsDiscoveryDepthValue, 10) ||
+        DEFAULT_SETTINGS.skills_discovery_depth
+      : (settings?.skills_discovery_depth ??
+        DEFAULT_SETTINGS.skills_discovery_depth);
+
     saveSettings(
       {
         language,
@@ -150,6 +167,8 @@ function AppSettingsScreen() {
         default_sandbox_spec_id: defaultSandboxSpecId,
         default_fc_storage_size_gb: defaultFcStorageSizeGb,
         default_fc_ram_size_mib: defaultFcRamSizeMib,
+        discover_all_repos: discoverAllRepos,
+        skills_discovery_depth: skillsDiscoveryDepth,
       },
       {
         onSuccess: () => {
@@ -174,6 +193,8 @@ function AppSettingsScreen() {
           setSelectedSandboxSpecId(null);
           setFcStorageSizeHasChanged(false);
           setFcRamSizeHasChanged(false);
+          setDiscoverAllReposHasChanged(false);
+          setSkillsDiscoveryDepthHasChanged(false);
         },
       },
     );
@@ -260,8 +281,23 @@ function AppSettingsScreen() {
   const checkIfFcRamSizeHasChanged = (value: string) => {
     const newValue = parseInt(value, 10);
     const currentValue =
-      settings?.default_fc_ram_size_gb ?? DEFAULT_SETTINGS.default_fc_ram_size_gb;
+      settings?.default_fc_ram_size_mib ??
+      DEFAULT_SETTINGS.default_fc_ram_size_mib;
     setFcRamSizeHasChanged(newValue !== currentValue);
+  };
+
+  const checkIfDiscoverAllReposHasChanged = (checked: boolean) => {
+    const currentValue =
+      settings?.discover_all_repos ?? DEFAULT_SETTINGS.discover_all_repos;
+    setDiscoverAllReposHasChanged(checked !== currentValue);
+  };
+
+  const checkIfSkillsDiscoveryDepthHasChanged = (value: string) => {
+    const newValue = parseInt(value, 10);
+    const currentValue =
+      settings?.skills_discovery_depth ??
+      DEFAULT_SETTINGS.skills_discovery_depth;
+    setSkillsDiscoveryDepthHasChanged(newValue !== currentValue);
   };
 
   const formIsClean =
@@ -276,7 +312,9 @@ function AppSettingsScreen() {
     !gitUserEmailHasChanged &&
     !sandboxTypeHasChanged &&
     !fcStorageSizeHasChanged &&
-    !fcRamSizeHasChanged;
+    !fcRamSizeHasChanged &&
+    !discoverAllReposHasChanged &&
+    !skillsDiscoveryDepthHasChanged;
 
   const shouldBeLoading = !settings || isLoading || isPending;
 
@@ -458,6 +496,54 @@ function AppSettingsScreen() {
                 placeholder="Email for git commits"
                 className="w-full max-w-[680px]"
               />
+            </div>
+          </div>
+
+          <div className="border-t border-t-tertiary pt-6 mt-2">
+            <h3 className="text-lg font-medium mb-2">
+              {t(I18nKey.SETTINGS$SKILLS_DISCOVERY)}
+            </h3>
+            <p className="text-xs mb-4">
+              {t(I18nKey.SETTINGS$SKILLS_DISCOVERY_DESCRIPTION)}
+            </p>
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-2">
+                <SettingsSwitch
+                  testId="discover-all-repos-switch"
+                  name="discover-all-repos-switch"
+                  defaultIsToggled={
+                    settings.discover_all_repos ??
+                    DEFAULT_SETTINGS.discover_all_repos
+                  }
+                  onToggle={checkIfDiscoverAllReposHasChanged}
+                >
+                  {t(I18nKey.SETTINGS$DISCOVER_ALL_REPOS)}
+                </SettingsSwitch>
+                <p className="text-xs text-[#A3A3A3]">
+                  {t(I18nKey.SETTINGS$DISCOVER_ALL_REPOS_DESCRIPTION)}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <SettingsInput
+                  testId="skills-discovery-depth-input"
+                  name="skills-discovery-depth-input"
+                  type="number"
+                  label={t(I18nKey.SETTINGS$SKILLS_DISCOVERY_DEPTH)}
+                  defaultValue={
+                    settings.skills_discovery_depth?.toString() ||
+                    DEFAULT_SETTINGS.skills_discovery_depth?.toString() ||
+                    "1"
+                  }
+                  onChange={checkIfSkillsDiscoveryDepthHasChanged}
+                  min={1}
+                  max={5}
+                  step={1}
+                  className="w-full max-w-[680px]"
+                />
+                <p className="text-xs text-[#A3A3A3]">
+                  {t(I18nKey.SETTINGS$SKILLS_DISCOVERY_DEPTH_DESCRIPTION)}
+                </p>
+              </div>
             </div>
           </div>
         </div>

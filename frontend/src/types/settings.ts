@@ -93,4 +93,8 @@ export type Settings = {
   default_fc_storage_size_gb?: number | null;
   // Default RAM size in MiB for Firecracker sandboxes
   default_fc_ram_size_mib?: number | null;
+  // Whether to discover skills from all git repos in the workspace
+  discover_all_repos?: boolean;
+  // Max depth for git repo discovery when discover_all_repos is enabled
+  skills_discovery_depth?: number;
 };

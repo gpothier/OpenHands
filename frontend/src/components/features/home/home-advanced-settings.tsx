@@ -5,6 +5,7 @@ import { useSandboxSpecs } from "#/hooks/query/use-sandbox-specs";
 import { useSelectedSandboxSpec } from "#/context/selected-sandbox-spec-context";
 import { SandboxTypeSelector } from "../settings/sandbox-settings/sandbox-type-selector";
 import { SettingsInput } from "../settings/settings-input";
+import { SettingsSwitch } from "../settings/settings-switch";
 import ChevronDownIcon from "#/icons/chevron-down-small.svg?react";
 import { DEFAULT_SETTINGS } from "#/services/settings";
 
@@ -24,6 +25,10 @@ export function HomeAdvancedSettings() {
     setSelectedStorageSizeGb,
     selectedRamSizeMib,
     setSelectedRamSizeMib,
+    discoverAllRepos,
+    setDiscoverAllRepos,
+    skillsDiscoveryDepth,
+    setSkillsDiscoveryDepth,
   } = useSelectedSandboxSpec();
 
   // Determine if the selected sandbox type is Firecracker
@@ -51,6 +56,17 @@ export function HomeAdvancedSettings() {
     const sizeMib = parseInt(value, 10);
     if (!Number.isNaN(sizeMib) && sizeMib >= 512) {
       setSelectedRamSizeMib(sizeMib);
+    }
+  };
+
+  const handleDiscoverAllReposChange = (checked: boolean) => {
+    setDiscoverAllRepos(checked);
+  };
+
+  const handleSkillsDiscoveryDepthChange = (value: string) => {
+    const depth = parseInt(value, 10);
+    if (!Number.isNaN(depth) && depth >= 1) {
+      setSkillsDiscoveryDepth(depth);
     }
   };
 
@@ -133,6 +149,47 @@ export function HomeAdvancedSettings() {
                 </div>
               </div>
             )}
+
+            {/* Skills Discovery Settings */}
+            <div className="border-t border-[#525252] pt-4 mt-2">
+              <h4 className="text-sm font-medium mb-3">
+                {t(I18nKey.SETTINGS$SKILLS_DISCOVERY)}
+              </h4>
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                  <SettingsSwitch
+                    testId="home-discover-all-repos"
+                    name="home-discover-all-repos"
+                    defaultIsToggled={discoverAllRepos}
+                    onToggle={handleDiscoverAllReposChange}
+                  >
+                    {t(I18nKey.SETTINGS$DISCOVER_ALL_REPOS)}
+                  </SettingsSwitch>
+                  <p className="text-xs text-[#A3A3A3]">
+                    {t(I18nKey.SETTINGS$DISCOVER_ALL_REPOS_DESCRIPTION)}
+                  </p>
+                </div>
+                {discoverAllRepos && (
+                  <div className="flex flex-col gap-2">
+                    <SettingsInput
+                      testId="home-skills-discovery-depth"
+                      name="home-skills-discovery-depth"
+                      type="number"
+                      label={t(I18nKey.SETTINGS$SKILLS_DISCOVERY_DEPTH)}
+                      defaultValue={skillsDiscoveryDepth.toString()}
+                      onChange={handleSkillsDiscoveryDepthChange}
+                      min={1}
+                      max={5}
+                      step={1}
+                      className="w-full"
+                    />
+                    <p className="text-xs text-[#A3A3A3]">
+                      {t(I18nKey.SETTINGS$SKILLS_DISCOVERY_DEPTH_DESCRIPTION)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

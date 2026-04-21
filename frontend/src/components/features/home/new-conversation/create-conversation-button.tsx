@@ -8,8 +8,13 @@ import { useSelectedSandboxSpec } from "#/context/selected-sandbox-spec-context"
 export function CreateConversationButton() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { selectedSpecId, selectedStorageSizeGb, selectedRamSizeMib } =
-    useSelectedSandboxSpec();
+  const {
+    selectedSpecId,
+    selectedStorageSizeGb,
+    selectedRamSizeMib,
+    discoverAllRepos,
+    skillsDiscoveryDepth,
+  } = useSelectedSandboxSpec();
 
   const {
     mutate: createConversation,
@@ -29,6 +34,8 @@ export function CreateConversationButton() {
         sandboxSpecId: selectedSpecId || undefined,
         fcStorageSizeGb: selectedStorageSizeGb || undefined,
         fcRamSizeMib: selectedRamSizeMib || undefined,
+        discoverAllRepos: discoverAllRepos || undefined,
+        skillsDiscoveryDepth: skillsDiscoveryDepth || undefined,
       },
       {
         onSuccess: (data) => navigate(`/conversations/${data.conversation_id}`),

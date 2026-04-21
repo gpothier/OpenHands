@@ -15,6 +15,10 @@ interface SelectedSandboxSpecContextType {
   setSelectedStorageSizeGb: (sizeGb: number | null) => void;
   selectedRamSizeMib: number | null;
   setSelectedRamSizeMib: (sizeMib: number | null) => void;
+  discoverAllRepos: boolean;
+  setDiscoverAllRepos: (value: boolean) => void;
+  skillsDiscoveryDepth: number;
+  setSkillsDiscoveryDepth: (value: number) => void;
 }
 
 const SelectedSandboxSpecContext =
@@ -32,6 +36,12 @@ export function SelectedSandboxSpecProvider({
   >(null);
   const [selectedRamSizeMib, setSelectedRamSizeMib] = useState<number | null>(
     null,
+  );
+  const [discoverAllRepos, setDiscoverAllRepos] = useState<boolean>(
+    DEFAULT_SETTINGS.discover_all_repos ?? false,
+  );
+  const [skillsDiscoveryDepth, setSkillsDiscoveryDepth] = useState<number>(
+    DEFAULT_SETTINGS.skills_discovery_depth ?? 1,
   );
 
   // Debug: log settings and state
@@ -90,6 +100,16 @@ export function SelectedSandboxSpecProvider({
     selectedRamSizeMib,
   ]);
 
+  // Initialize skills discovery settings from user settings
+  useEffect(() => {
+    if (settings?.discover_all_repos !== undefined) {
+      setDiscoverAllRepos(settings.discover_all_repos);
+    }
+    if (settings?.skills_discovery_depth !== undefined) {
+      setSkillsDiscoveryDepth(settings.skills_discovery_depth);
+    }
+  }, [settings?.discover_all_repos, settings?.skills_discovery_depth]);
+
   const contextValue = useMemo(
     () => ({
       selectedSpecId,
@@ -98,8 +118,18 @@ export function SelectedSandboxSpecProvider({
       setSelectedStorageSizeGb,
       selectedRamSizeMib,
       setSelectedRamSizeMib,
+      discoverAllRepos,
+      setDiscoverAllRepos,
+      skillsDiscoveryDepth,
+      setSkillsDiscoveryDepth,
     }),
-    [selectedSpecId, selectedStorageSizeGb, selectedRamSizeMib],
+    [
+      selectedSpecId,
+      selectedStorageSizeGb,
+      selectedRamSizeMib,
+      discoverAllRepos,
+      skillsDiscoveryDepth,
+    ],
   );
 
   return (

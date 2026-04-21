@@ -20,6 +20,8 @@ interface CreateConversationVariables {
   sandboxSpecId?: string; // Sandbox spec for selecting Docker/Firecracker
   fcStorageSizeGb?: number; // Storage size in GB for Firecracker sandboxes
   fcRamSizeMib?: number; // RAM size in MiB for Firecracker sandboxes
+  discoverAllRepos?: boolean; // Discover skills from all git repos in workspace
+  skillsDiscoveryDepth?: number; // Max depth for git repo discovery
 }
 
 // Response type for V1 conversations
@@ -54,6 +56,8 @@ export const useCreateConversation = () => {
         sandboxSpecId,
         fcStorageSizeGb,
         fcRamSizeMib,
+        discoverAllRepos,
+        skillsDiscoveryDepth,
       } = variables;
 
       // Debug: log extracted sandboxSpecId, fcStorageSizeGb, and fcRamSizeMib
@@ -64,6 +68,10 @@ export const useCreateConversation = () => {
         fcStorageSizeGb,
         ", fcRamSizeMib =",
         fcRamSizeMib,
+        ", discoverAllRepos =",
+        discoverAllRepos,
+        ", skillsDiscoveryDepth =",
+        skillsDiscoveryDepth,
       );
 
       // Use V1 API - creates a conversation start task
@@ -83,6 +91,8 @@ export const useCreateConversation = () => {
         sandboxSpecId,
         fcStorageSizeGb,
         fcRamSizeMib,
+        discoverAllRepos,
+        skillsDiscoveryDepth,
       );
 
       // Return a special task ID that the frontend will recognize
