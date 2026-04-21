@@ -462,6 +462,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
         'OH_FIRECRACKER_MANAGER_SOCKET',
         '/var/run/fcvmd/fcvmd.sock',
     )
+    _logger.info(f'Checking for Firecracker daemon socket at: {daemon_socket}')
     if os.path.exists(daemon_socket):
         try:
             from openhands.app_server.sandbox.firecracker_sandbox_service import (
@@ -497,5 +498,10 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             _logger.info('Firecracker sandbox registered')
         except Exception as e:
             _logger.warning(f'Failed to initialize Firecracker sandbox: {e}')
+    else:
+        _logger.info(
+            f'Firecracker daemon socket not found at {daemon_socket}, '
+            'Firecracker sandbox type will not be available'
+        )
 
     yield registry
