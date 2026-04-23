@@ -817,6 +817,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             get_httpx_client(state) as httpx_client,
             get_sandbox_spec_service(state) as sandbox_spec_service,
         ):
+            _logger.info(f'DockerSandboxServiceInjector kvm_enabled={self.kvm_enabled}')
             yield DockerSandboxService(
                 sandbox_spec_service=sandbox_spec_service,
                 container_name_prefix=self.container_name_prefix,

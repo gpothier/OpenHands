@@ -429,6 +429,9 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
         ]
 
         # Build Docker service with all required arguments
+        kvm_enabled = os.getenv('SANDBOX_KVM_ENABLED', '').lower() in ('1', 'true', 'yes')
+        _logger.info(f'DockerSandboxService kvm_enabled={kvm_enabled} (from SANDBOX_KVM_ENABLED env var)')
+
         docker_service = DockerSandboxService(
             sandbox_spec_service=docker_spec_service,
             container_name_prefix='oh-agent-server-',
@@ -443,6 +446,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             permitted_cors_origins=config.permitted_cors_origins or [],
             extra_hosts={'host.docker.internal': 'host-gateway'},
             startup_grace_seconds=int(os.getenv('SANDBOX_STARTUP_GRACE_SECONDS', '60')),
+            kvm_enabled=kvm_enabled,
             proxy_vscode=os.getenv('SANDBOX_PROXY_VSCODE', '').lower() in ('1', 'true', 'yes', 'on'),
             proxy_agent=os.getenv('SANDBOX_PROXY_AGENT', '').lower() in ('1', 'true', 'yes', 'on'),
         )
