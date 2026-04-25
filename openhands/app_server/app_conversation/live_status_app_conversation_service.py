@@ -285,6 +285,15 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
                 sandbox.sandbox_spec_id
             )
+            if not sandbox_spec:
+                # Fallback to default spec when the sandbox's spec is not found.
+                # This handles pre-existing sandboxes whose spec ID no longer exists.
+                _logger.warning(
+                    f'Sandbox spec {sandbox.sandbox_spec_id} not found - using default.'
+                )
+                sandbox_spec = (
+                    await self.sandbox_spec_service.get_default_sandbox_spec()
+                )
             assert sandbox_spec is not None
 
             # Set up conversation id
