@@ -69,7 +69,6 @@ from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxSer
 from openhands.app_server.sandbox.firecracker_sandbox_service import (
     FirecrackerSandboxService,
 )
-from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     FirecrackerSandboxStartParams,
@@ -81,6 +80,7 @@ from openhands.app_server.sandbox.sandbox_service import (
     SSH_PUBLIC_KEYS_VARIABLE,
     SandboxService,
 )
+from openhands.app_server.sandbox.sandbox_service_registry import SandboxRegistry
 from openhands.app_server.sandbox.sandbox_spec_models import SandboxType
 from openhands.app_server.sandbox.sandbox_spec_service import SandboxSpecService
 from openhands.app_server.services.injector import InjectorState
@@ -321,7 +321,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     remote_workspace=remote_workspace,
                     selected_repository=request.selected_repository,
                     plugins=request.plugins,
-                    discover_all_repos=request.discover_all_repos,
+                    discover_all_repos=request.discover_all_repos or False,
                 )
             )
 
@@ -2209,9 +2209,7 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 )
             elif firecracker_service:
                 # Firecracker VMs reach the host via the TAP network gateway IP
-                internal_web_url = (
-                    f'http://{firecracker_service.host_ip}:{firecracker_service.host_port}'
-                )
+                internal_web_url = f'http://{firecracker_service.host_ip}:{firecracker_service.host_port}'
 
             # Get app_mode for SaaS mode
             app_mode = None

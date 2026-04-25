@@ -293,7 +293,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
             task.request.selected_repository,
             project_dir,
             agent_server_url,
-            discover_all_repos=task.request.discover_all_repos,
+            discover_all_repos=task.request.discover_all_repos or False,
             workspace_base=workspace.working_dir,
         )
 
