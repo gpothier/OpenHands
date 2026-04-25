@@ -171,18 +171,19 @@ class AppConversationStartRequest(OpenHandsModel):
             'Default is 2048 MiB if not specified.'
         ),
     )
-    discover_all_repos: bool = Field(
-        default=False,
+    discover_all_repos: bool | None = Field(
+        default=None,
         description=(
             'Whether to discover skills from all git repositories under the '
-            'workspace directory, not just the selected repository.'
+            'workspace directory, not just the selected repository. '
+            'Defaults to False if not specified.'
         ),
     )
-    skills_discovery_depth: int = Field(
-        default=1,
+    skills_discovery_depth: int | None = Field(
+        default=None,
         description=(
             'Maximum directory depth when searching for git repositories '
-            'when discover_all_repos is enabled.'
+            'when discover_all_repos is enabled. Defaults to 1 if not specified.'
         ),
     )
     conversation_id: UUID | None = Field(default=None)
