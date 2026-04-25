@@ -1018,6 +1018,20 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
 
         return user_search_key or service_tavily_key
 
+    def _is_firecracker_sandbox_id(self, sandbox_id: str) -> bool:
+        """Check if a sandbox ID indicates a Firecracker VM.
+
+        Firecracker sandbox IDs always start with 'fc-' prefix.
+        This is a heuristic fallback when sandbox spec lookup fails.
+
+        Args:
+            sandbox_id: The sandbox ID to check
+
+        Returns:
+            True if the ID indicates a Firecracker sandbox
+        """
+        return sandbox_id.startswith('fc-')
+
     async def _get_internal_url_for_sandbox(self, sandbox: SandboxInfo) -> str | None:
         """Get the internal URL for callbacks based on sandbox type.
 
@@ -1040,7 +1054,21 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             sandbox.sandbox_spec_id
         )
 
-        if sandbox_spec and sandbox_spec.type == SandboxType.FIRECRACKER:
+        # Determine if this is a Firecracker sandbox
+        # Primary: check sandbox spec type
+        # Fallback: check sandbox ID prefix (fc-) when spec is not found
+        is_firecracker = False
+        if sandbox_spec:
+            is_firecracker = sandbox_spec.type == SandboxType.FIRECRACKER
+        elif self._is_firecracker_sandbox_id(sandbox.id):
+            # Sandbox spec not found, but ID indicates Firecracker
+            _logger.warning(
+                f'Sandbox spec {sandbox.sandbox_spec_id} not found, '
+                f'but sandbox ID {sandbox.id} indicates Firecracker VM'
+            )
+            is_firecracker = True
+
+        if is_firecracker:
             # Firecracker sandbox - get the per-VM gateway IP from the daemon
             fc_service: FirecrackerSandboxService | None = None
             if isinstance(self.sandbox_service, SandboxRegistry):
