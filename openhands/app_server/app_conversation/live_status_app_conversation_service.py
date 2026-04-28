@@ -1085,8 +1085,6 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 host_ip = fc_service.get_sandbox_host_ip(sandbox.id)
                 if host_ip:
                     return f'http://{host_ip}:{fc_service.host_port}'
-                # Fallback to computed host_ip if daemon doesn't return it
-                return f'http://{fc_service.host_ip}:{fc_service.host_port}'
 
         # For Docker or fallback, use the pre-computed internal_web_url
         return self.internal_web_url
@@ -2222,31 +2220,24 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # with the external web_url (e.g., self-signed certs) do not apply.
             internal_web_url: str | None = None
 
-            # Extract sandbox services from registry or direct service
+            # Extract Docker sandbox service from registry or direct service
             docker_service: DockerSandboxService | None = None
-            firecracker_service: FirecrackerSandboxService | None = None
             if registry is not None:
                 docker_sandbox = registry.get(SandboxType.DOCKER)
                 if docker_sandbox and hasattr(docker_sandbox, 'service'):
                     if isinstance(docker_sandbox.service, DockerSandboxService):
                         docker_service = docker_sandbox.service
-                fc_sandbox = registry.get(SandboxType.FIRECRACKER)
-                if fc_sandbox and hasattr(fc_sandbox, 'service'):
-                    if isinstance(fc_sandbox.service, FirecrackerSandboxService):
-                        firecracker_service = fc_sandbox.service
             elif isinstance(sandbox_service, DockerSandboxService):
                 docker_service = sandbox_service
-            elif isinstance(sandbox_service, FirecrackerSandboxService):
-                firecracker_service = sandbox_service
 
             if docker_service:
                 # Docker containers reach the host via host.docker.internal
                 internal_web_url = (
                     f'http://host.docker.internal:{docker_service.host_port}'
                 )
-            elif firecracker_service:
-                # Firecracker VMs reach the host via the TAP network gateway IP
-                internal_web_url = f'http://{firecracker_service.host_ip}:{firecracker_service.host_port}'
+            # For Firecracker, internal_web_url is left as None: each VM has its own
+            # TAP host IP returned by the daemon, resolved per-sandbox in
+            # _get_internal_url_for_sandbox via get_sandbox_host_ip().
 
             # Get app_mode for SaaS mode
             app_mode = None
