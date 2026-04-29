@@ -87,6 +87,22 @@ _DOCKER_IN_VM_CGROUPNS: str = "host"
 # runc does not abort cleanly, causing the subsequent cgroup.procs write to
 # fail with ENOENT. seccomp=unconfined removes that filter.
 _DOCKER_IN_VM_SECURITY_OPT: list[str] = ["seccomp=unconfined"]
+# Kata CLH mounts /sys/fs/cgroup read-only inside containers regardless of
+# cgroupns=host. The inner dockerd needs a writable cgroupfs to create
+# /sys/fs/cgroup/docker/<id>/ directories. We remount it rw at container
+# startup before the agent server starts, falling back to a fresh cgroup2
+# mount if remount is not permitted.
+# The agent-server image ENTRYPOINT has no CMD, so exec it directly.
+_DOCKER_IN_VM_ENTRYPOINT: list[str] = [
+    "/bin/sh",
+    "-c",
+    (
+        "mount -o remount,rw /sys/fs/cgroup 2>/dev/null"
+        " || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null"
+        " || true;"
+        " exec /usr/local/bin/openhands-agent-server"
+    ),
+]
 
 
 def _get_use_host_network_default() -> bool:
@@ -691,6 +707,11 @@ class DockerSandboxService(SandboxService):
                 # Without this the filter returns EPERM, runc's cgroup mkdir
                 # fails silently, and cgroup.procs writes fail with ENOENT.
                 security_opt=_DOCKER_IN_VM_SECURITY_OPT if self.enable_inner_docker else None,
+                # Remount cgroupfs as rw before the agent server starts.
+                # Kata CLH always mounts /sys/fs/cgroup read-only, even with
+                # cgroupns=host. Without a writable cgroupfs the inner dockerd
+                # cannot create cgroup directories for its containers.
+                entrypoint=_DOCKER_IN_VM_ENTRYPOINT if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
