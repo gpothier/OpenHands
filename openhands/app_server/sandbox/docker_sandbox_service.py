@@ -577,6 +577,20 @@ class DockerSandboxService(SandboxService):
             )
 
         if self.privileged:
+            # Privileged mode is only safe when containers run inside a VM-backed
+            # runtime (e.g. Kata Containers) where the VM boundary — not the
+            # container boundary — is the security boundary.  With plain runc a
+            # privileged container can escape to the host kernel.
+            #
+            # We enforce this here so that a misconfigured SANDBOX_PRIVILEGED=true
+            # without a matching VM runtime is caught immediately rather than
+            # silently creating an unsafe container.
+            if not self.container_runtime or "kata" not in self.container_runtime:
+                raise SandboxError(
+                    f"SANDBOX_PRIVILEGED=true requires a VM-backed container runtime "
+                    f"(e.g. kata-clh), but container_runtime={self.container_runtime!r}. "
+                    f"Refusing to create a privileged runc container."
+                )
             _logger.info(f"Starting sandbox {container_name} in privileged mode")
 
         try:
