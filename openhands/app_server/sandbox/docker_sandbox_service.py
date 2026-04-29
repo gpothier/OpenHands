@@ -78,6 +78,13 @@ _DOCKER_IN_VM_CGROUPNS: str = "host"
 _DOCKER_IN_VM_CGROUP_MOUNT: dict[str, dict[str, str]] = {
     "/sys/fs/cgroup": {"bind": "/sys/fs/cgroup", "mode": "rw"},
 }
+# Docker's default seccomp profile is still active with cap_add (unlike
+# --privileged which disables it entirely). The inner runc uses syscalls
+# such as clone(CLONE_NEWCGROUP), unshare, and pivot_root that the default
+# profile restricts. When blocked, runc's cgroup mkdir returns EPERM and
+# runc does not abort cleanly, causing the subsequent cgroup.procs write to
+# fail with ENOENT. seccomp=unconfined removes that filter.
+_DOCKER_IN_VM_SECURITY_OPT: list[str] = ["seccomp=unconfined"]
 
 
 def _get_use_host_network_default() -> bool:
@@ -681,6 +688,11 @@ class DockerSandboxService(SandboxService):
                 # Share the VM's root cgroup namespace so the inner dockerd can
                 # create cgroup directories under /sys/fs/cgroup.
                 cgroupns=_DOCKER_IN_VM_CGROUPNS if self.enable_inner_docker else None,
+                # Disable the default seccomp filter so the inner runc can use
+                # cgroup/namespace syscalls (clone, unshare, pivot_root, etc.).
+                # Without this the filter returns EPERM, runc's cgroup mkdir
+                # fails silently, and cgroup.procs writes fail with ENOENT.
+                security_opt=_DOCKER_IN_VM_SECURITY_OPT if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
