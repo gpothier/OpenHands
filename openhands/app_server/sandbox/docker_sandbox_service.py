@@ -711,6 +711,12 @@ class DockerSandboxService(SandboxService):
                 # cgroupns=host. Without a writable cgroupfs the inner dockerd
                 # cannot create cgroup directories for its containers.
                 entrypoint=_DOCKER_IN_VM_ENTRYPOINT if self.enable_inner_docker else None,
+                # mount(8) has a userspace UID check that rejects non-root
+                # callers regardless of capabilities. The agent-server image
+                # runs as the 'openhands' user, so the remount in the
+                # entrypoint wrapper would fail. Run as root instead — safe
+                # inside the Kata VM where the VM is the isolation boundary.
+                user="root" if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
