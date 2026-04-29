@@ -464,7 +464,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
         _logger.info(
             f"DockerSandboxService kvm_enabled={kvm_enabled} "
             f"container_runtime={container_runtime!r} "
-            f"privileged={privileged} "
+            f"enable_inner_docker={enable_inner_docker} "
             f"(from SANDBOX_KVM_ENABLED / SANDBOX_CONTAINER_RUNTIME / SANDBOX_ENABLE_DOCKER)"
         )
 
