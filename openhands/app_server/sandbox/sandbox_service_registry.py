@@ -456,7 +456,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             "yes",
         )
         container_runtime = os.getenv("SANDBOX_CONTAINER_RUNTIME") or None
-        privileged = os.getenv("SANDBOX_PRIVILEGED", "").lower() in (
+        enable_inner_docker = os.getenv("SANDBOX_ENABLE_DOCKER", "").lower() in (
             "1",
             "true",
             "yes",
@@ -465,7 +465,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             f"DockerSandboxService kvm_enabled={kvm_enabled} "
             f"container_runtime={container_runtime!r} "
             f"privileged={privileged} "
-            f"(from SANDBOX_KVM_ENABLED / SANDBOX_CONTAINER_RUNTIME / SANDBOX_PRIVILEGED)"
+            f"(from SANDBOX_KVM_ENABLED / SANDBOX_CONTAINER_RUNTIME / SANDBOX_ENABLE_DOCKER)"
         )
 
         docker_service = DockerSandboxService(
@@ -486,7 +486,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             startup_grace_seconds=int(os.getenv("SANDBOX_STARTUP_GRACE_SECONDS", "60")),
             kvm_enabled=kvm_enabled,
             container_runtime=container_runtime,
-            privileged=privileged,
+            enable_inner_docker=enable_inner_docker,
             proxy_vscode=os.getenv("SANDBOX_PROXY_VSCODE", "").lower()
             in ("1", "true", "yes", "on"),
             proxy_agent=os.getenv("SANDBOX_PROXY_AGENT", "").lower()

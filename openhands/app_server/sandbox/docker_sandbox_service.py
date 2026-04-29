@@ -48,7 +48,7 @@ from openhands.app_server.utils.docker_utils import (
 _logger = logging.getLogger(__name__)
 STARTUP_GRACE_SECONDS = 15
 
-# Capabilities granted to sandbox containers when SANDBOX_PRIVILEGED=true.
+# Capabilities granted to sandbox containers when SANDBOX_ENABLE_DOCKER=true.
 #
 # We deliberately avoid Docker's `--privileged` flag with Kata runtimes because
 # it sets AllDevicesAllowed in the OCI spec, which causes Kata/CLH to try to
@@ -59,7 +59,7 @@ STARTUP_GRACE_SECONDS = 15
 #   NET_RAW    — raw/packet sockets (used by Docker's libnetwork)
 #   SYS_ADMIN  — mount(2), cgroup operations, user-namespace setup
 #   MKNOD      — device-node creation inside containers started by the inner dockerd
-_KATA_PRIVILEGED_CAPS: list[str] = ["NET_ADMIN", "NET_RAW", "SYS_ADMIN", "MKNOD"]
+_DOCKER_IN_VM_CAPS: list[str] = ["NET_ADMIN", "NET_RAW", "SYS_ADMIN", "MKNOD"]
 
 
 def _get_use_host_network_default() -> bool:
@@ -88,14 +88,14 @@ def _get_container_runtime_default() -> str | None:
     return os.getenv("SANDBOX_CONTAINER_RUNTIME") or None
 
 
-def _get_privileged_default() -> bool:
+def _get_enable_inner_docker_default() -> bool:
     """Get the default privileged mode from environment variables.
 
     When True, sandbox containers run with full privileges scoped to their
     kernel. Safe inside a Kata VM (the VM boundary is the security boundary);
-    avoid on plain runc. Configure via SANDBOX_PRIVILEGED environment variable.
+    avoid on plain runc. Configure via SANDBOX_ENABLE_DOCKER environment variable.
     """
-    return os.getenv("SANDBOX_PRIVILEGED", "").lower() in ("true", "1", "yes")
+    return os.getenv("SANDBOX_ENABLE_DOCKER", "").lower() in ("true", "1", "yes")
 
 
 class VolumeMount(BaseModel):
@@ -133,7 +133,7 @@ class DockerSandboxService(SandboxService):
     use_host_network: bool = False
     kvm_enabled: bool = False
     container_runtime: str | None = None
-    privileged: bool = False
+    enable_inner_docker: bool = False
     proxy_vscode: bool = False
     proxy_agent: bool = False
 
@@ -589,24 +589,24 @@ class DockerSandboxService(SandboxService):
                 f"Starting sandbox {container_name} with runtime={self.container_runtime}"
             )
 
-        if self.privileged:
+        if self.enable_inner_docker:
             # Privileged mode is only safe when containers run inside a VM-backed
             # runtime (e.g. Kata Containers) where the VM boundary — not the
             # container boundary — is the security boundary.  With plain runc a
             # privileged container can escape to the host kernel.
             #
-            # We enforce this here so that a misconfigured SANDBOX_PRIVILEGED=true
+            # We enforce this here so that a misconfigured SANDBOX_ENABLE_DOCKER=true
             # without a matching VM runtime is caught immediately rather than
             # silently creating an unsafe container.
             if not self.container_runtime or "kata" not in self.container_runtime:
                 raise SandboxError(
-                    f"SANDBOX_PRIVILEGED=true requires a VM-backed container runtime "
+                    f"SANDBOX_ENABLE_DOCKER=true requires a VM-backed container runtime "
                     f"(e.g. kata-clh), but container_runtime={self.container_runtime!r}. "
                     f"Refusing to create a privileged runc container."
                 )
             _logger.info(
                 f"Starting sandbox {container_name} with elevated caps "
-                f"{_KATA_PRIVILEGED_CAPS} (SANDBOX_PRIVILEGED=true)"
+                f"{_DOCKER_IN_VM_CAPS} (SANDBOX_ENABLE_DOCKER=true)"
             )
 
         try:
@@ -637,12 +637,12 @@ class DockerSandboxService(SandboxService):
                 devices=devices,
                 # OCI runtime override (e.g. 'kata-clh' for Kata Containers)
                 runtime=self.container_runtime,
-                # Capability elevation for Docker-in-VM (SANDBOX_PRIVILEGED=true).
+                # Capability elevation for Docker-in-VM (SANDBOX_ENABLE_DOCKER=true).
                 # We use cap_add rather than privileged=True: the latter sets
                 # AllDevicesAllowed in the OCI spec, which causes Kata/CLH to
                 # attempt block-device hotplug for every host loop/block device
                 # and fail.  cap_add grants only what dockerd actually needs.
-                cap_add=_KATA_PRIVILEGED_CAPS if self.privileged else None,
+                cap_add=_DOCKER_IN_VM_CAPS if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
@@ -856,14 +856,14 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             "Configure via SANDBOX_CONTAINER_RUNTIME environment variable."
         ),
     )
-    privileged: bool = Field(
-        default_factory=_get_privileged_default,
+    enable_inner_docker: bool = Field(
+        default_factory=_get_enable_inner_docker_default,
         description=(
             "Run sandbox containers in privileged mode (Docker --privileged). "
             "Required for Docker-in-Docker inside Kata VMs — the VM boundary "
             "is the security boundary, so this is safe with Kata runtimes. "
             "Do not enable on plain runc without careful consideration. "
-            "Configure via SANDBOX_PRIVILEGED environment variable."
+            "Configure via SANDBOX_ENABLE_DOCKER environment variable."
         ),
     )
     proxy_vscode: bool = Field(
@@ -911,7 +911,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             _logger.info(
                 f"DockerSandboxServiceInjector kvm_enabled={self.kvm_enabled} "
                 f"container_runtime={self.container_runtime!r} "
-                f"privileged={self.privileged}"
+                f"enable_inner_docker={self.enable_inner_docker}"
             )
             yield DockerSandboxService(
                 sandbox_spec_service=sandbox_spec_service,
@@ -930,7 +930,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 use_host_network=self.use_host_network,
                 kvm_enabled=self.kvm_enabled,
                 container_runtime=self.container_runtime,
-                privileged=self.privileged,
+                enable_inner_docker=self.enable_inner_docker,
                 proxy_vscode=self.proxy_vscode,
                 proxy_agent=self.proxy_agent,
             )
