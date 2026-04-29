@@ -70,10 +70,10 @@ _DOCKER_IN_VM_SYSCTLS: dict[str, str] = {
     # sysctls= avoids the read-only /proc/sys mount inside the container.
     "net.ipv4.ip_forward": "1",
 }
-# cgroupns_mode="host" puts the container in the VM's root cgroup namespace,
+# cgroupns="host" puts the container in the VM's root cgroup namespace,
 # making /sys/fs/cgroup writable (SYS_ADMIN + host cgroupns = full access).
 # The rw bind-mount of /sys/fs/cgroup is also required; without it Docker
-# still sees the fs as read-only regardless of cgroupns mode.
+# still sees the fs as read-only regardless of cgroupns setting.
 _DOCKER_IN_VM_CGROUPNS: str = "host"
 _DOCKER_IN_VM_CGROUP_MOUNT: dict[str, dict[str, str]] = {
     "/sys/fs/cgroup": {"bind": "/sys/fs/cgroup", "mode": "rw"},
@@ -680,7 +680,7 @@ class DockerSandboxService(SandboxService):
                 sysctls=_DOCKER_IN_VM_SYSCTLS if self.enable_inner_docker else None,
                 # Share the VM's root cgroup namespace so the inner dockerd can
                 # create cgroup directories under /sys/fs/cgroup.
-                cgroupns_mode=_DOCKER_IN_VM_CGROUPNS if self.enable_inner_docker else None,
+                cgroupns=_DOCKER_IN_VM_CGROUPNS if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
