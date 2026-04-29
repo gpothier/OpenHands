@@ -48,18 +48,26 @@ from openhands.app_server.utils.docker_utils import (
 _logger = logging.getLogger(__name__)
 STARTUP_GRACE_SECONDS = 15
 
-# Capabilities granted to sandbox containers when SANDBOX_ENABLE_DOCKER=true.
+# Capabilities and sysctls granted to sandbox containers when SANDBOX_ENABLE_DOCKER=true.
 #
 # We deliberately avoid Docker's `--privileged` flag with Kata runtimes because
 # it sets AllDevicesAllowed in the OCI spec, which causes Kata/CLH to try to
 # hotplug every host block device (loop devices, etc.) into the VM and fail.
 #
-# Instead we grant only the capabilities actually needed for Docker-in-VM:
+# cap_add grants the capabilities dockerd needs without touching device allowlists:
 #   NET_ADMIN  — iptables rules, bridge interfaces, routing tables
 #   NET_RAW    — raw/packet sockets (used by Docker's libnetwork)
 #   SYS_ADMIN  — mount(2), cgroup operations, user-namespace setup
 #   MKNOD      — device-node creation inside containers started by the inner dockerd
+#
+# sysctls pre-set the kernel parameters that dockerd would otherwise write to
+# /proc/sys at startup. cap_add alone does not make /proc/sys writable (only
+# --privileged does); passing them via sysctls= at container creation avoids
+# that write entirely.
 _DOCKER_IN_VM_CAPS: list[str] = ["NET_ADMIN", "NET_RAW", "SYS_ADMIN", "MKNOD"]
+_DOCKER_IN_VM_SYSCTLS: dict[str, str] = {
+    "net.ipv4.ip_forward": "1",
+}
 
 
 def _get_use_host_network_default() -> bool:
@@ -643,6 +651,10 @@ class DockerSandboxService(SandboxService):
                 # attempt block-device hotplug for every host loop/block device
                 # and fail.  cap_add grants only what dockerd actually needs.
                 cap_add=_DOCKER_IN_VM_CAPS if self.enable_inner_docker else None,
+                # Pre-set sysctls that dockerd writes to /proc/sys at startup.
+                # cap_add does not make /proc/sys writable; sysctls= sets them
+                # in the container's network namespace at creation time instead.
+                sysctls=_DOCKER_IN_VM_SYSCTLS if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
