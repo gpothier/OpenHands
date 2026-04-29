@@ -75,6 +75,16 @@ def _get_container_runtime_default() -> str | None:
     return os.getenv("SANDBOX_CONTAINER_RUNTIME") or None
 
 
+def _get_privileged_default() -> bool:
+    """Get the default privileged mode from environment variables.
+
+    When True, sandbox containers run with full privileges scoped to their
+    kernel. Safe inside a Kata VM (the VM boundary is the security boundary);
+    avoid on plain runc. Configure via SANDBOX_PRIVILEGED environment variable.
+    """
+    return os.getenv("SANDBOX_PRIVILEGED", "").lower() in ("true", "1", "yes")
+
+
 class VolumeMount(BaseModel):
     """Mounted volume within the container."""
 
@@ -110,6 +120,7 @@ class DockerSandboxService(SandboxService):
     use_host_network: bool = False
     kvm_enabled: bool = False
     container_runtime: str | None = None
+    privileged: bool = False
     proxy_vscode: bool = False
     proxy_agent: bool = False
 
@@ -565,6 +576,9 @@ class DockerSandboxService(SandboxService):
                 f"Starting sandbox {container_name} with runtime={self.container_runtime}"
             )
 
+        if self.privileged:
+            _logger.info(f"Starting sandbox {container_name} in privileged mode")
+
         try:
             # Create and start the container
             container = self.docker_client.containers.run(  # type: ignore[call-overload,misc]
@@ -593,6 +607,9 @@ class DockerSandboxService(SandboxService):
                 devices=devices,
                 # OCI runtime override (e.g. 'kata-clh' for Kata Containers)
                 runtime=self.container_runtime,
+                # Privileged mode — safe inside a Kata VM; the VM boundary
+                # is the security boundary, not the container boundary.
+                privileged=self.privileged or None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
@@ -806,6 +823,16 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             "Configure via SANDBOX_CONTAINER_RUNTIME environment variable."
         ),
     )
+    privileged: bool = Field(
+        default_factory=_get_privileged_default,
+        description=(
+            "Run sandbox containers in privileged mode (Docker --privileged). "
+            "Required for Docker-in-Docker inside Kata VMs — the VM boundary "
+            "is the security boundary, so this is safe with Kata runtimes. "
+            "Do not enable on plain runc without careful consideration. "
+            "Configure via SANDBOX_PRIVILEGED environment variable."
+        ),
+    )
     proxy_vscode: bool = Field(
         default=False,
         description=(
@@ -850,7 +877,8 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
         ):
             _logger.info(
                 f"DockerSandboxServiceInjector kvm_enabled={self.kvm_enabled} "
-                f"container_runtime={self.container_runtime!r}"
+                f"container_runtime={self.container_runtime!r} "
+                f"privileged={self.privileged}"
             )
             yield DockerSandboxService(
                 sandbox_spec_service=sandbox_spec_service,
@@ -869,6 +897,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 use_host_network=self.use_host_network,
                 kvm_enabled=self.kvm_enabled,
                 container_runtime=self.container_runtime,
+                privileged=self.privileged,
                 proxy_vscode=self.proxy_vscode,
                 proxy_agent=self.proxy_agent,
             )
