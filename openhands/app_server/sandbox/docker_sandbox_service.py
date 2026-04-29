@@ -66,7 +66,17 @@ STARTUP_GRACE_SECONDS = 15
 # that write entirely.
 _DOCKER_IN_VM_CAPS: list[str] = ["NET_ADMIN", "NET_RAW", "SYS_ADMIN", "MKNOD"]
 _DOCKER_IN_VM_SYSCTLS: dict[str, str] = {
+    # dockerd writes this to /proc/sys/net at startup; pre-setting it via
+    # sysctls= avoids the read-only /proc/sys mount inside the container.
     "net.ipv4.ip_forward": "1",
+}
+# cgroupns_mode="host" puts the container in the VM's root cgroup namespace,
+# making /sys/fs/cgroup writable (SYS_ADMIN + host cgroupns = full access).
+# The rw bind-mount of /sys/fs/cgroup is also required; without it Docker
+# still sees the fs as read-only regardless of cgroupns mode.
+_DOCKER_IN_VM_CGROUPNS: str = "host"
+_DOCKER_IN_VM_CGROUP_MOUNT: dict[str, dict[str, str]] = {
+    "/sys/fs/cgroup": {"bind": "/sys/fs/cgroup", "mode": "rw"},
 }
 
 
@@ -577,16 +587,17 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
-        # Mount the dockerd daemon.json into sandbox containers so the inner
-        # Docker daemon gets the right storage-driver (vfs) without needing
-        # to write to /proc/sys or rely on overlayfs-on-virtiofs.
-        # The host path comes from SANDBOX_DOCKER_DAEMON_JSON; this must be a
-        # path on the Docker host, not inside the OpenHands container.
-        if self.enable_inner_docker and self.inner_docker_daemon_json:
-            volumes[self.inner_docker_daemon_json] = {
-                "bind": "/etc/docker/daemon.json",
-                "mode": "ro",
-            }
+        if self.enable_inner_docker:
+            # Mount the dockerd daemon.json (storage-driver=vfs) so the inner
+            # dockerd gets the right config without relying on overlayfs-on-virtiofs.
+            if self.inner_docker_daemon_json:
+                volumes[self.inner_docker_daemon_json] = {
+                    "bind": "/etc/docker/daemon.json",
+                    "mode": "ro",
+                }
+            # Expose the VM's cgroupfs as read-write so the inner dockerd can
+            # create /sys/fs/cgroup/docker. Works in tandem with cgroupns=host.
+            volumes.update(_DOCKER_IN_VM_CGROUP_MOUNT)
 
         # Determine network mode
         network_mode = "host" if self.use_host_network else None
@@ -667,6 +678,9 @@ class DockerSandboxService(SandboxService):
                 # cap_add does not make /proc/sys writable; sysctls= sets them
                 # in the container's network namespace at creation time instead.
                 sysctls=_DOCKER_IN_VM_SYSCTLS if self.enable_inner_docker else None,
+                # Share the VM's root cgroup namespace so the inner dockerd can
+                # create cgroup directories under /sys/fs/cgroup.
+                cgroupns_mode=_DOCKER_IN_VM_CGROUPNS if self.enable_inner_docker else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
