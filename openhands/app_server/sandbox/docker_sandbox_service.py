@@ -107,6 +107,11 @@ _DOCKER_IN_VM_SECURITY_OPT: list[str] = ["seccomp=unconfined"]
 # Both remounts succeed with CAP_SYS_ADMIN + cgroupns=host + user=root.
 # After setup, runuser drops back to the image's intended user.
 #
+# dockerd is also started here so the openhands user gets a working Docker
+# socket without any manual steps. The daemon.json sets "group":"10001"
+# (openhands GID) so the socket is group-accessible without sudo.
+# dockerd stdout/stderr go to /var/log/dockerd.log inside the container.
+#
 # The agent-server image ENTRYPOINT has no CMD, so exec it directly.
 _DOCKER_IN_VM_ENTRYPOINT: list[str] = [
     "/bin/sh",
@@ -114,6 +119,10 @@ _DOCKER_IN_VM_ENTRYPOINT: list[str] = [
     (
         "mount -o remount,rw /sys/fs/cgroup"
         " && mount -o remount,rw /proc/sys"
+        " && { dockerd >/var/log/dockerd.log 2>&1 &"
+        "   until [ -S /var/run/docker.sock ]"
+        "     && timeout 2 docker info >/dev/null 2>&1;"
+        "     do sleep 0.2; done; }"
         " && exec runuser -u openhands -- /usr/local/bin/openhands-agent-server"
     ),
 ]
