@@ -48,6 +48,19 @@ from openhands.app_server.utils.docker_utils import (
 _logger = logging.getLogger(__name__)
 STARTUP_GRACE_SECONDS = 15
 
+# Capabilities granted to sandbox containers when SANDBOX_PRIVILEGED=true.
+#
+# We deliberately avoid Docker's `--privileged` flag with Kata runtimes because
+# it sets AllDevicesAllowed in the OCI spec, which causes Kata/CLH to try to
+# hotplug every host block device (loop devices, etc.) into the VM and fail.
+#
+# Instead we grant only the capabilities actually needed for Docker-in-VM:
+#   NET_ADMIN  — iptables rules, bridge interfaces, routing tables
+#   NET_RAW    — raw/packet sockets (used by Docker's libnetwork)
+#   SYS_ADMIN  — mount(2), cgroup operations, user-namespace setup
+#   MKNOD      — device-node creation inside containers started by the inner dockerd
+_KATA_PRIVILEGED_CAPS: list[str] = ["NET_ADMIN", "NET_RAW", "SYS_ADMIN", "MKNOD"]
+
 
 def _get_use_host_network_default() -> bool:
     """Get the default value for use_host_network from environment variables.
@@ -591,7 +604,10 @@ class DockerSandboxService(SandboxService):
                     f"(e.g. kata-clh), but container_runtime={self.container_runtime!r}. "
                     f"Refusing to create a privileged runc container."
                 )
-            _logger.info(f"Starting sandbox {container_name} in privileged mode")
+            _logger.info(
+                f"Starting sandbox {container_name} with elevated caps "
+                f"{_KATA_PRIVILEGED_CAPS} (SANDBOX_PRIVILEGED=true)"
+            )
 
         try:
             # Create and start the container
@@ -621,9 +637,12 @@ class DockerSandboxService(SandboxService):
                 devices=devices,
                 # OCI runtime override (e.g. 'kata-clh' for Kata Containers)
                 runtime=self.container_runtime,
-                # Privileged mode — safe inside a Kata VM; the VM boundary
-                # is the security boundary, not the container boundary.
-                privileged=self.privileged or None,
+                # Capability elevation for Docker-in-VM (SANDBOX_PRIVILEGED=true).
+                # We use cap_add rather than privileged=True: the latter sets
+                # AllDevicesAllowed in the OCI spec, which causes Kata/CLH to
+                # attempt block-device hotplug for every host loop/block device
+                # and fail.  cap_add grants only what dockerd actually needs.
+                cap_add=_KATA_PRIVILEGED_CAPS if self.privileged else None,
             )
 
             sandbox_info = await self._container_to_sandbox_info(container)
