@@ -455,8 +455,11 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             "true",
             "yes",
         )
+        container_runtime = os.getenv("SANDBOX_CONTAINER_RUNTIME") or None
         _logger.info(
-            f"DockerSandboxService kvm_enabled={kvm_enabled} (from SANDBOX_KVM_ENABLED env var)"
+            f"DockerSandboxService kvm_enabled={kvm_enabled} "
+            f"container_runtime={container_runtime!r} "
+            f"(from SANDBOX_KVM_ENABLED / SANDBOX_CONTAINER_RUNTIME env vars)"
         )
 
         docker_service = DockerSandboxService(
@@ -476,6 +479,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             extra_hosts={"host.docker.internal": "host-gateway"},
             startup_grace_seconds=int(os.getenv("SANDBOX_STARTUP_GRACE_SECONDS", "60")),
             kvm_enabled=kvm_enabled,
+            container_runtime=container_runtime,
             proxy_vscode=os.getenv("SANDBOX_PROXY_VSCODE", "").lower()
             in ("1", "true", "yes", "on"),
             proxy_agent=os.getenv("SANDBOX_PROXY_AGENT", "").lower()
