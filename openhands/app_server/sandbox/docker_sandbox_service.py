@@ -70,14 +70,16 @@ _DOCKER_IN_VM_SYSCTLS: dict[str, str] = {
     # sysctls= avoids the read-only /proc/sys mount inside the container.
     "net.ipv4.ip_forward": "1",
 }
-# cgroupns="host" puts the container in the VM's root cgroup namespace,
-# making /sys/fs/cgroup writable (SYS_ADMIN + host cgroupns = full access).
-# The rw bind-mount of /sys/fs/cgroup is also required; without it Docker
-# still sees the fs as read-only regardless of cgroupns setting.
+# cgroupns="host" puts the container in the VM's root cgroup namespace.
+# Kata/CLH interprets this by mounting the VM's native cgroupfs as rw
+# inside the container, allowing the inner runc to create cgroup directories
+# and write cgroup.procs.
+#
+# Do NOT add a /sys/fs/cgroup bind mount here. Kata shares host volumes via
+# virtiofs, which makes /sys/fs/cgroup appear as a plain filesystem inside
+# the VM. mkdir on a virtiofs path creates regular directories, not cgroup
+# directories — so cgroup.procs is never auto-created and inner runc fails.
 _DOCKER_IN_VM_CGROUPNS: str = "host"
-_DOCKER_IN_VM_CGROUP_MOUNT: dict[str, dict[str, str]] = {
-    "/sys/fs/cgroup": {"bind": "/sys/fs/cgroup", "mode": "rw"},
-}
 # Docker's default seccomp profile is still active with cap_add (unlike
 # --privileged which disables it entirely). The inner runc uses syscalls
 # such as clone(CLONE_NEWCGROUP), unshare, and pivot_root that the default
@@ -594,17 +596,13 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
-        if self.enable_inner_docker:
+        if self.enable_inner_docker and self.inner_docker_daemon_json:
             # Mount the dockerd daemon.json (storage-driver=vfs) so the inner
             # dockerd gets the right config without relying on overlayfs-on-virtiofs.
-            if self.inner_docker_daemon_json:
-                volumes[self.inner_docker_daemon_json] = {
-                    "bind": "/etc/docker/daemon.json",
-                    "mode": "ro",
-                }
-            # Expose the VM's cgroupfs as read-write so the inner dockerd can
-            # create /sys/fs/cgroup/docker. Works in tandem with cgroupns=host.
-            volumes.update(_DOCKER_IN_VM_CGROUP_MOUNT)
+            volumes[self.inner_docker_daemon_json] = {
+                "bind": "/etc/docker/daemon.json",
+                "mode": "ro",
+            }
 
         # Determine network mode
         network_mode = "host" if self.use_host_network else None
