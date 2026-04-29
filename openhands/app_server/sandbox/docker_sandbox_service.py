@@ -91,10 +91,21 @@ _DOCKER_IN_VM_SECURITY_OPT: list[str] = ["seccomp=unconfined"]
 # regardless of cgroupns=host. The inner dockerd needs a writable cgroupfs
 # to create /sys/fs/cgroup/docker/<id>/ directories.
 #
-# Verified: with CAP_SYS_ADMIN and cgroupns=host,
-# `mount -o remount,rw /sys/fs/cgroup` succeeds inside the Kata VM.
-# nsdelegate does not block writes when the container is in the root
-# cgroup namespace (cgroupns=host).
+# Kata CLH mounts both cgroupfs and procfs read-only inside containers.
+# Two remounts are needed before the agent server starts:
+#
+# 1. /sys/fs/cgroup (rw): the inner dockerd needs to create cgroup
+#    directories under /sys/fs/cgroup/docker/<container-id>/.
+#
+# 2. /proc/sys (rw): when the inner runc sets up a new network namespace
+#    for each inner container, it writes to
+#    /proc/sys/net/ipv6/conf/<iface>/disable_ipv6 through the sandbox's
+#    own /proc (not the inner container's own procfs, which hasn't been
+#    mounted yet at network-setup time). Without this remount that write
+#    fails with EROFS and container creation is aborted.
+#
+# Both remounts succeed with CAP_SYS_ADMIN + cgroupns=host + user=root.
+# After setup, runuser drops back to the image's intended user.
 #
 # The agent-server image ENTRYPOINT has no CMD, so exec it directly.
 _DOCKER_IN_VM_ENTRYPOINT: list[str] = [
@@ -102,6 +113,7 @@ _DOCKER_IN_VM_ENTRYPOINT: list[str] = [
     "-c",
     (
         "mount -o remount,rw /sys/fs/cgroup"
+        " && mount -o remount,rw /proc/sys"
         " && exec runuser -u openhands -- /usr/local/bin/openhands-agent-server"
     ),
 ]
