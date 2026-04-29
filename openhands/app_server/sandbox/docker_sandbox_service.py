@@ -100,7 +100,10 @@ _DOCKER_IN_VM_SECURITY_OPT: list[str] = ["seccomp=unconfined"]
 _DOCKER_IN_VM_ENTRYPOINT: list[str] = [
     "/bin/sh",
     "-c",
-    "mount -o remount,rw /sys/fs/cgroup && exec /usr/local/bin/openhands-agent-server",
+    (
+        "mount -o remount,rw /sys/fs/cgroup"
+        " && exec runuser -u openhands -- /usr/local/bin/openhands-agent-server"
+    ),
 ]
 
 
