@@ -142,6 +142,7 @@ class DockerSandboxService(SandboxService):
     kvm_enabled: bool = False
     container_runtime: str | None = None
     enable_inner_docker: bool = False
+    inner_docker_daemon_json: str | None = None
     proxy_vscode: bool = False
     proxy_agent: bool = False
 
@@ -576,6 +577,17 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
+        # Mount the dockerd daemon.json into sandbox containers so the inner
+        # Docker daemon gets the right storage-driver (vfs) without needing
+        # to write to /proc/sys or rely on overlayfs-on-virtiofs.
+        # The host path comes from SANDBOX_DOCKER_DAEMON_JSON; this must be a
+        # path on the Docker host, not inside the OpenHands container.
+        if self.enable_inner_docker and self.inner_docker_daemon_json:
+            volumes[self.inner_docker_daemon_json] = {
+                "bind": "/etc/docker/daemon.json",
+                "mode": "ro",
+            }
+
         # Determine network mode
         network_mode = "host" if self.use_host_network else None
 
@@ -878,6 +890,16 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             "Configure via SANDBOX_ENABLE_DOCKER environment variable."
         ),
     )
+    inner_docker_daemon_json: str | None = Field(
+        default=None,
+        description=(
+            "Host-side path to a daemon.json file to mount into sandbox containers "
+            "as /etc/docker/daemon.json. Used with SANDBOX_ENABLE_DOCKER=true to "
+            "configure the inner dockerd (e.g. storage-driver=vfs for virtiofs). "
+            "Must be a path on the Docker host, not inside the OpenHands container. "
+            "Configure via SANDBOX_DOCKER_DAEMON_JSON environment variable."
+        ),
+    )
     proxy_vscode: bool = Field(
         default=False,
         description=(
@@ -943,6 +965,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 kvm_enabled=self.kvm_enabled,
                 container_runtime=self.container_runtime,
                 enable_inner_docker=self.enable_inner_docker,
+                inner_docker_daemon_json=self.inner_docker_daemon_json,
                 proxy_vscode=self.proxy_vscode,
                 proxy_agent=self.proxy_agent,
             )

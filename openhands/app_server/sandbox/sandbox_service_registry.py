@@ -461,6 +461,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             "true",
             "yes",
         )
+        inner_docker_daemon_json = os.getenv("SANDBOX_DOCKER_DAEMON_JSON") or None
         _logger.info(
             f"DockerSandboxService kvm_enabled={kvm_enabled} "
             f"container_runtime={container_runtime!r} "
@@ -487,6 +488,7 @@ async def create_sandbox_registry() -> AsyncGenerator[SandboxRegistry, None]:
             kvm_enabled=kvm_enabled,
             container_runtime=container_runtime,
             enable_inner_docker=enable_inner_docker,
+            inner_docker_daemon_json=inner_docker_daemon_json,
             proxy_vscode=os.getenv("SANDBOX_PROXY_VSCODE", "").lower()
             in ("1", "true", "yes", "on"),
             proxy_agent=os.getenv("SANDBOX_PROXY_AGENT", "").lower()
