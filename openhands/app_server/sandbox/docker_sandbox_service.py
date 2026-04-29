@@ -89,18 +89,30 @@ _DOCKER_IN_VM_CGROUPNS: str = "host"
 _DOCKER_IN_VM_SECURITY_OPT: list[str] = ["seccomp=unconfined"]
 # Kata CLH mounts /sys/fs/cgroup read-only inside containers regardless of
 # cgroupns=host. The inner dockerd needs a writable cgroupfs to create
-# /sys/fs/cgroup/docker/<id>/ directories. We remount it rw at container
-# startup before the agent server starts, falling back to a fresh cgroup2
-# mount if remount is not permitted.
+# /sys/fs/cgroup/docker/<id>/ directories.
+#
+# Strategy (executed before the agent server starts):
+# 1. unshare --mount: create a private mount namespace so changes don't
+#    affect sibling processes and bypass mount-propagation locking.
+# 2. mount -o remount,rw: try to flip the existing cgroupfs to rw in the
+#    private namespace. Works if Kata didn't lock the mount.
+# 3. Fallback — umount then fresh mount -t cgroup2: removes Kata's ro mount
+#    entirely and replaces it with a new writable cgroupfs. Disconnects from
+#    the VM's cgroup hierarchy, but the inner dockerd only needs a writable
+#    cgroupfs for its own /sys/fs/cgroup/docker/* tree.
+# 4. The agent server is exec'd inside the same private namespace so it
+#    (and any child processes, including dockerd) inherits the rw cgroupfs.
+#
 # The agent-server image ENTRYPOINT has no CMD, so exec it directly.
 _DOCKER_IN_VM_ENTRYPOINT: list[str] = [
     "/bin/sh",
     "-c",
     (
+        "exec unshare --mount /bin/sh -c '"
         "mount -o remount,rw /sys/fs/cgroup 2>/dev/null"
-        " || mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null"
-        " || true;"
-        " exec /usr/local/bin/openhands-agent-server"
+        " || { umount /sys/fs/cgroup 2>/dev/null;"
+        " mount -t cgroup2 none /sys/fs/cgroup 2>/dev/null; };"
+        " exec /usr/local/bin/openhands-agent-server'"
     ),
 ]
 
