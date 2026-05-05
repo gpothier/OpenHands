@@ -41,6 +41,7 @@ export function VSCodeTooltipContent() {
     }
 
     if (vscodeRemoteUrl) {
+      console.log("Opening local VSCode with URL:", vscodeRemoteUrl);
       window.location.href = vscodeRemoteUrl;
     }
   };
